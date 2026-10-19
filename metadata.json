@@ -1,0 +1,6 @@
+{
+  "name": "منصة القليسي",
+  "description": "منصة تجارة إلكترونية متعددة البائعين تشمل بوابات العميل والبائع والإدارة مع أمان متقدم وتحكم بالصلاحيات",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
