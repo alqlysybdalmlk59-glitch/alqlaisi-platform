@@ -126,6 +126,17 @@ class SellerApi {
   Future<List<Map<String, dynamic>>> orders(String token, String storeId) async =>
       _asList(await request('/orders/vendor/${Uri.encodeComponent(storeId)}', token: token));
 
+  Future<Map<String, dynamic>> salesSummary(String token, String storeId) async {
+    final result = await request(
+      '/orders/vendor/${Uri.encodeComponent(storeId)}/summary',
+      token: token,
+    );
+    if (result is! Map) {
+      throw const SellerApiException('استجابة تقرير المبيعات غير صحيحة.');
+    }
+    return Map<String, dynamic>.from(result);
+  }
+
   Future<void> addProduct(String token, String name, String description, String image, String category) async {
     await request('/products/', method: 'POST', token: token, body: {
       'title': name.trim(), 'description': description.trim(), 'image_url': image.trim(),
@@ -418,6 +429,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
   String? _error;
   List<Map<String, dynamic>> _products = [];
   List<Map<String, dynamic>> _orders = [];
+  Map<String, dynamic>? _summary;
 
   @override void initState() { super.initState(); _refresh(); }
 
@@ -427,7 +439,13 @@ class _SellerHomePageState extends State<SellerHomePage> {
       final storeId = widget.store['id'].toString();
       final products = await widget.api.products(widget.token, storeId);
       final orders = await widget.api.orders(widget.token, storeId);
-      if (mounted) setState(() { _products = products; _orders = orders; _error = null; });
+      final summary = await widget.api.salesSummary(widget.token, storeId);
+      if (mounted) setState(() {
+        _products = products;
+        _orders = orders;
+        _summary = summary;
+        _error = null;
+      });
     } catch (error) {
       if (mounted) setState(() => _error = error is SellerApiException ? error.message : 'تعذر تحميل البيانات.');
     } finally {
@@ -504,7 +522,13 @@ class _SellerHomePageState extends State<SellerHomePage> {
   @override
   Widget build(BuildContext context) {
     final storeName = (widget.store['store_name'] ?? 'Alqlaisi').toString();
-    final pages = <Widget>[_overview(storeName), _productPage(), _orderPage(), _settings(storeName)];
+    final pages = <Widget>[
+      _overview(storeName),
+      _productPage(),
+      _orderPage(),
+      _reportPage(),
+      _settings(storeName),
+    ];
     return Scaffold(
       appBar: AppBar(title: Text(storeName),
         actions: [IconButton(tooltip: 'تحديث', onPressed: _refresh, icon: const Icon(Icons.refresh))]),
@@ -525,6 +549,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
           NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'الرئيسية'),
           NavigationDestination(icon: Icon(Icons.inventory_2_outlined), selectedIcon: Icon(Icons.inventory_2), label: 'المنتجات'),
           NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: 'الطلبات'),
+          NavigationDestination(icon: Icon(Icons.analytics_outlined), selectedIcon: Icon(Icons.analytics), label: 'التقارير'),
           NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'الإعدادات'),
         ],
       ),
@@ -606,6 +631,129 @@ class _SellerHomePageState extends State<SellerHomePage> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children)));
       },
     ));
+  }
+
+  Widget _reportPage() {
+    final summary = _summary;
+    if (summary == null) {
+      return Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('تعذر تحميل تقرير المبيعات من الخادم.'),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: _refresh,
+            icon: const Icon(Icons.refresh),
+            label: const Text('إعادة المحاولة'),
+          ),
+        ]),
+      );
+    }
+
+    final deliveredValue = summary['delivered_gross_value'];
+    final commissionConfigured = summary['commission_configured'] == true;
+    final currency = (summary['currency'] ?? 'YER').toString();
+    String valueOf(String key) => (summary[key] ?? 0).toString();
+    final statusCounts = summary['status_counts'];
+    final statuses = statusCounts is Map
+        ? Map<String, dynamic>.from(statusCounts)
+        : <String, dynamic>{};
+
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text('تقرير المتجر', style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: 6),
+          Text(
+            'تقرير من الخادم للمتجر: ${summary['store_name'] ?? widget.store['store_name'] ?? ''}',
+            style: const TextStyle(color: Colors.black54),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _MetricCard('كل الطلبات', valueOf('order_count'), Icons.receipt_long),
+              _MetricCard('قيد المعالجة', valueOf('pending_count'), Icons.pending_actions),
+              _MetricCard('تم التسليم', valueOf('delivered_count'), Icons.task_alt),
+              _MetricCard('ملغاة', valueOf('cancelled_count'), Icons.cancel_outlined),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'إجمالي قيمة الطلبات المسلّمة',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${deliveredValue ?? 0} ريال',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      color: _brand,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'هذا إجمالي قيمة الطلبات التي وصلت إلى حالة "تم التسليم"، ويشمل رسوم التوصيل؛ '
+                    'ليس صافي ربح البائع أو تسوية مالية.',
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('الطلبات حسب الحالة', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  if (statuses.isEmpty)
+                    const Text('لا توجد بيانات حالة حالياً.')
+                  else
+                    ...statuses.entries.map((entry) => ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(entry.key),
+                      trailing: Text(entry.value.toString()),
+                    )),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: ListTile(
+              leading: Icon(
+                commissionConfigured ? Icons.verified_outlined : Icons.info_outline,
+                color: commissionConfigured ? Colors.green : Colors.orange,
+              ),
+              title: Text(commissionConfigured ? 'العمولة مهيأة' : 'العمولة غير محددة'),
+              subtitle: Text(
+                commissionConfigured
+                    ? 'نسبة العمولة: ${summary['commission_percent'] ?? '—'}%'
+                    : (summary['commission_note'] ??
+                      'لم تحدد نسبة العمولة؛ لا يتم احتساب عمولة أو تسوية مالية.').toString(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'العملة المعلنة من الخادم: $currency · حدّث الصفحة لجلب أرقام أحدث.',
+            style: const TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _settings(String storeName) => ListView(padding: const EdgeInsets.all(16), children: [
