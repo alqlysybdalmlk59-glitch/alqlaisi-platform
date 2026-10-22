@@ -1,12 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException
+"""Deprecated legacy user endpoints.
+
+Authentication has moved to /api/auth. These compatibility paths deliberately
+fail closed instead of retaining the previous passwordless auto-provisioning
+and client-asserted Google identity behavior.
+"""
+from fastapi import APIRouter, Header, HTTPException, status, Depends
 from sqlalchemy.orm import Session
 from typing import List
+
 import database
 import models
-from schemas import UserSchema
-from pydantic import BaseModel as PydanticBase
+from app.core.security import decode_access_token
 
-router = APIRouter(prefix="/api/users", tags=["Users & Authentication"])
+router = APIRouter(prefix="/api/users", tags=["Users (legacy; use /api/auth)"])
+
 
 def get_db():
     db = database.SessionLocal()
@@ -15,69 +22,54 @@ def get_db():
     finally:
         db.close()
 
-class LoginRequest(PydanticBase):
-    email: str
-    password: str = ""
 
-class GoogleLoginRequest(PydanticBase):
-    email: str
-    name: str
-    photo_url: str = ""
-
-@router.post("/register", response_model=UserSchema)
-def register_user(user: UserSchema, db: Session = Depends(get_db)):
-    existing = db.query(models.DBUser).filter(models.DBUser.email == user.email).first()
-    if existing:
-        return existing
-    db_user = models.DBUser(
-        id=user.id or f"u_{user.email}",
-        name=user.name,
-        email=user.email,
-        role=user.role.upper(),
-        phone=user.phone,
-        address=user.address
+def _deprecated_auth_endpoint():
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="تم إيقاف هذا المسار القديم لأسباب أمنية. استخدم /api/auth/register و/api/auth/login.",
     )
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
 
-@router.post("/login", response_model=UserSchema)
-def login_user(req: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(models.DBUser).filter(models.DBUser.email == req.email).first()
-    if not user:
-        # إنشاء مستخدم افتراضي تلقائياً إن لمש يكن موجوداً لتسهيل التجربة
-        role = "ADMIN" if "admin" in req.email.lower() else ("VENDOR" if "vendor" in req.email.lower() else "CLIENT")
-        user = models.DBUser(
-            id=f"u_{req.email}",
-            name=req.email.split('@')[0],
-            email=req.email,
-            role=role,
-            phone="0771234567",
-            address="صنعاء - اليمن"
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    return user
 
-@router.post("/google-login", response_model=UserSchema)
-def google_login(req: GoogleLoginRequest, db: Session = Depends(get_db)):
-    user = db.query(models.DBUser).filter(models.DBUser.email == req.email).first()
-    if not user:
-        user = models.DBUser(
-            id=f"g_{req.email}",
-            name=req.name,
-            email=req.email,
-            role="CLIENT",
-            phone="0770000000",
-            address="صنعاء - اليمن"
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    return user
+@router.post("/register")
+def register_user():
+    return _deprecated_auth_endpoint()
 
-@router.get("/", response_model=List[UserSchema])
-def get_users(db: Session = Depends(get_db)):
-    return db.query(models.DBUser).all()
+
+@router.post("/login")
+def login_user():
+    return _deprecated_auth_endpoint()
+
+
+@router.post("/google-login")
+def google_login():
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="تسجيل الدخول بواسطة Google غير متاح حتى يتم التحقق من Google ID token على الخادم.",
+    )
+
+
+@router.get("/", response_model=List[dict])
+def get_users(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="يتطلب عرض المستخدمين صلاحية مدير النظام.")
+    try:
+        payload = decode_access_token(authorization.split(" ", 1)[1])
+    except (ValueError, RuntimeError):
+        raise HTTPException(status_code=401, detail="رمز الدخول غير صالح أو منتهي الصلاحية.")
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="هذه الوظيفة مخصصة لمدير النظام.")
+    return [
+        {
+            "id": str(user.id),
+            "name": user.name,
+            "email": user.email if not user.email.endswith("@accounts.alqulaisi.invalid") else None,
+            "role": user.role,
+            "phone": user.phone,
+            "address": user.address,
+            "status": getattr(user, "status", "active"),
+        }
+        for user in db.query(models.DBUser).all()
+    ]
