@@ -1,0 +1,15 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+**/.dart_tool
+**/build
+**/node_modules
+backend/*.db
+backend/*.sqlite
+*.log
