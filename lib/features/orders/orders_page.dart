@@ -170,7 +170,7 @@ class _OrdersPageState extends State<OrdersPage> {
                     final value = 5 - index;
                     return DropdownMenuItem<int>(
                       value: value,
-                      child: Text('$value / 5 ${'★' * value}'),
+                      child: Text('$value / 5 ${List.filled(value, '★').join()}'),
                     );
                   }),
                   onChanged: (value) {
