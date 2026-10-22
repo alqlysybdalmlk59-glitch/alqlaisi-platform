@@ -7,7 +7,9 @@ class FavoritesStore extends ChangeNotifier {
   FavoritesStore._();
   static final FavoritesStore instance = FavoritesStore._();
   static const FlutterSecureStorage _storage = FlutterSecureStorage();
-  static const String _key = 'alqlaisi_favorite_products_v1';
+  String _accountId = 'anonymous';
+  String get _key => 'alqlaisi_favorite_products_v2_$_accountId';
+  int _generation = 0;
   final Map<String, Product> _products = {};
   bool _loaded = false;
   Future<void>? _loading;
@@ -15,17 +17,50 @@ class FavoritesStore extends ChangeNotifier {
   List<Product> get products => List<Product>.unmodifiable(_products.values);
   bool contains(String id) => _products.containsKey(id);
 
+  /// Switch the local favourites namespace to the authenticated platform user.
+  Future<void> selectAccount(String accountId) async {
+    final nextAccount = accountId.trim();
+    if (nextAccount.isEmpty) {
+      throw ArgumentError.value(accountId, 'accountId', 'Account ID is required.');
+    }
+    if (_accountId == nextAccount && _loaded) return;
+    _accountId = nextAccount;
+    _generation++;
+    _products.clear();
+    _loaded = false;
+    _loading = null;
+    notifyListeners();
+    await load();
+  }
+
+  /// Clear in-memory state on logout but keep each account's own saved list.
+  Future<void> clearActiveAccount() async {
+    _generation++;
+    _accountId = 'anonymous';
+    _products.clear();
+    _loaded = false;
+    _loading = null;
+    notifyListeners();
+  }
+
   Future<void> load() async {
     if (_loaded) return;
     final pending = _loading;
     if (pending != null) return pending;
-    final future = _readStorage();
+    final generation = _generation;
+    final key = _key;
+    final future = _readStorage(key, generation);
     _loading = future;
-    try { await future; } finally { _loading = null; }
+    try {
+      await future;
+    } finally {
+      if (generation == _generation) _loading = null;
+    }
   }
 
-  Future<void> _readStorage() async {
-    final raw = await _storage.read(key: _key);
+  Future<void> _readStorage(String key, int generation) async {
+    final raw = await _storage.read(key: key);
+    if (generation != _generation) return;
     if (raw != null && raw.isNotEmpty) {
       try {
         final decoded = jsonDecode(raw);
@@ -36,15 +71,18 @@ class FavoritesStore extends ChangeNotifier {
           }
         }
       } on FormatException {
-        await _storage.delete(key: _key);
+        await _storage.delete(key: key);
       }
     }
+    if (generation != _generation) return;
     _loaded = true;
     notifyListeners();
   }
 
   Future<void> toggle(Product product) async {
+    final generation = _generation;
     await load();
+    if (generation != _generation) throw StateError('تم تغيير الحساب؛ أعد المحاولة.');
     if (_products.containsKey(product.id)) {
       _products.remove(product.id);
     } else {
@@ -55,7 +93,9 @@ class FavoritesStore extends ChangeNotifier {
   }
 
   Future<void> remove(String productId) async {
+    final generation = _generation;
     await load();
+    if (generation != _generation) throw StateError('تم تغيير الحساب؛ أعد المحاولة.');
     _products.remove(productId);
     await _save();
     notifyListeners();

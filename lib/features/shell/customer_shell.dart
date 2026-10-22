@@ -8,11 +8,13 @@ import '../checkout/checkout_page.dart';
 import '../home/home_page.dart';
 import '../orders/orders_page.dart';
 import '../profile/profile_page.dart';
+import '../favorites/favorites_store.dart';
 
 class CustomerShell extends StatefulWidget {
-  const CustomerShell({super.key, required this.accessToken, required this.onLogout});
+  const CustomerShell({super.key, required this.accessToken, required this.userId, required this.onLogout});
 
   final String accessToken;
+  final String userId;
   final Future<void> Function() onLogout;
 
   @override
@@ -21,9 +23,36 @@ class CustomerShell extends StatefulWidget {
 
 class _CustomerShellState extends State<CustomerShell> {
   int _selectedIndex = 0;
+  bool _favoritesReady = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectAccountFavorites();
+  }
+
+  @override
+  void didUpdateWidget(covariant CustomerShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId) {
+      setState(() => _favoritesReady = false);
+      _selectAccountFavorites();
+    }
+  }
+
+  Future<void> _selectAccountFavorites() async {
+    try {
+      await FavoritesStore.instance.selectAccount(widget.userId);
+    } finally {
+      if (mounted) setState(() => _favoritesReady = true);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (!_favoritesReady) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
     final cartService = CartScope.of(context);
 
     final pages = <Widget>[

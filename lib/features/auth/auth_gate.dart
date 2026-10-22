@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_theme.dart';
 import '../shell/customer_shell.dart';
+import '../favorites/favorites_store.dart';
 import 'login_page.dart';
 import 'models/auth_user.dart';
 import 'register_page.dart';
@@ -74,6 +75,7 @@ class _AuthGateState extends State<AuthGate> {
 
 
   Future<void> _logout() async {
+    await FavoritesStore.instance.clearActiveAccount();
     await _sessionController.logout();
     if (mounted) setState(() { _showRegister = false; });
   }
@@ -99,7 +101,7 @@ class _AuthGateState extends State<AuthGate> {
 
     if (_sessionController.isAuthenticated) {
       if (_sessionController.user?.role == 'customer') {
-        return CustomerShell(accessToken: _sessionController.token ?? '', onLogout: _logout);
+        return CustomerShell(accessToken: _sessionController.token ?? '', userId: _sessionController.user?.id ?? '', onLogout: _logout);
       }
       return _AccountRoleNotice(
         role: _sessionController.user?.role ?? 'unknown',
