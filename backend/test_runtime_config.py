@@ -31,6 +31,15 @@ class TestProductionRuntimeConfig(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "PostgreSQL"):
                 runtime_config.validate_production_configuration()
 
+    def test_production_rejects_database_without_tls(self):
+        env = {**self.good_env, "DATABASE_URL": "postgresql+psycopg://user:pass@db.example.net:5432/platform"}
+        with patch.dict(os.environ, env, clear=False), \
+             patch.object(runtime_config, "IS_PRODUCTION", True), \
+             patch.object(runtime_config, "CORS_ORIGINS", ["https://admin.example.net"]), \
+             patch.object(runtime_config, "ALLOWED_HOSTS", ["api.example.net"]):
+            with self.assertRaisesRegex(RuntimeError, "TLS"):
+                runtime_config.validate_production_configuration()
+
     def test_production_rejects_missing_google_client_id(self):
         env = {**self.good_env, "GOOGLE_CLIENT_ID": ""}
         with patch.dict(os.environ, env, clear=False), \

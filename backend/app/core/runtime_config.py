@@ -1,6 +1,6 @@
 """Fail-closed validation for production runtime configuration."""
 import os
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 from sqlalchemy import inspect
 
 APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
@@ -16,6 +16,10 @@ def validate_production_configuration() -> None:
     database_url = os.getenv("DATABASE_URL", "").strip()
     if not database_url.startswith(("postgresql://", "postgresql+psycopg://")):
         raise RuntimeError("Production requires PostgreSQL in DATABASE_URL; SQLite is development-only.")
+    database_parts = urlsplit(database_url)
+    sslmodes = parse_qs(database_parts.query).get("sslmode", [])
+    if not sslmodes or sslmodes[0].lower() not in {"require", "verify-ca", "verify-full"}:
+        raise RuntimeError("Production DATABASE_URL must explicitly require PostgreSQL TLS using sslmode=require or stronger.")
     secret = os.getenv("JWT_SECRET_KEY", "")
     forbidden = ("replace", "change_me", "test-only", "your-secret", "example")
     if len(secret) < 48 or any(marker in secret.lower() for marker in forbidden):
