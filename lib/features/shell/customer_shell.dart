@@ -7,11 +7,13 @@ import '../categories/category_page.dart';
 import '../checkout/checkout_page.dart';
 import '../home/home_page.dart';
 import '../orders/orders_page.dart';
+import '../profile/profile_page.dart';
 
 class CustomerShell extends StatefulWidget {
-  const CustomerShell({super.key, required this.accessToken});
+  const CustomerShell({super.key, required this.accessToken, required this.onLogout});
 
   final String accessToken;
+  final Future<void> Function() onLogout;
 
   @override
   State<CustomerShell> createState() => _CustomerShellState();
@@ -40,8 +42,8 @@ class _CustomerShellState extends State<CustomerShell> {
           );
         },
       ),
-      const OrdersPage(),
-      const _AccountPlaceholder(),
+      OrdersPage(token: widget.accessToken),
+      ProfilePage(token: widget.accessToken, onLogout: widget.onLogout),
     ];
 
     return Scaffold(

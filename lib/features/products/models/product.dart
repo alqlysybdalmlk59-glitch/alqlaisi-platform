@@ -7,7 +7,8 @@ class Product {
     this.imageUrl,
     required this.storeId,
     this.storeName = '',
-    this.isAvailable = true,
+    this.isAvailable = false,
+    this.category = 'عام',
   });
 
   final String id;
@@ -18,17 +19,17 @@ class Product {
   final String storeId;
   final String storeName;
   final bool isAvailable;
+  final String category;
 
-  factory Product.fromJson(Map<String, dynamic> json) {
-    return Product(
-      id: (json['id'] ?? '').toString(),
-      name: (json['name'] ?? '').toString(),
-      description: (json['description'] ?? '').toString(),
-      price: (json['price'] as num?)?.toInt() ?? 0,
-      imageUrl: json['image_url']?.toString(),
-      storeId: (json['store_id'] ?? '').toString(),
-      storeName: (json['store_name'] ?? '').toString(),
-      isAvailable: json['is_available'] as bool? ?? true,
-    );
-  }
+  factory Product.fromJson(Map<String, dynamic> json) => Product(
+    id: (json['id'] ?? '').toString(),
+    name: (json['title'] ?? json['name'] ?? '').toString(),
+    description: (json['description'] ?? '').toString(),
+    price: (json['price'] as num?)?.round() ?? 0,
+    imageUrl: (json['image_url']?.toString().trim().isNotEmpty ?? false) ? json['image_url'].toString() : null,
+    storeId: (json['vendor_id'] ?? json['store_id'] ?? '').toString(),
+    storeName: (json['vendor_name'] ?? json['store_name'] ?? '').toString(),
+    isAvailable: json['is_available'] as bool? ?? false,
+    category: (json['category'] ?? 'عام').toString(),
+  );
 }

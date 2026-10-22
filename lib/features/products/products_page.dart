@@ -1,15 +1,8 @@
 import 'package:flutter/material.dart';
+import 'product_catalog_page.dart';
 
 class ProductsPage extends StatelessWidget {
-  const ProductsPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('المنتجات'),
-      ),
-      body: const Center(child: Text('صفحة المنتجات')),
-    );
-  }
+  const ProductsPage({super.key,this.category});
+  final String? category;
+  @override Widget build(BuildContext context)=>ProductCatalogPage(title:category==null?'المنتجات':'منتجات التصنيف',category:category);
 }
