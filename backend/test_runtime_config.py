@@ -52,10 +52,12 @@ class TestProductionRuntimeConfig(unittest.TestCase):
 
     def test_production_rejects_missing_explicit_allowed_hosts(self):
         env = {**self.good_env, "ALLOWED_HOSTS": ""}
-        with patch.dict(os.environ, env, clear=False), \\
-             patch.object(runtime_config, "IS_PRODUCTION", True), \\
-             patch.object(runtime_config, "CORS_ORIGINS", ["https://admin.example.net"]), \\
-             patch.object(runtime_config, "ALLOWED_HOSTS", ["localhost", "127.0.0.1"]):
+        with (
+            patch.dict(os.environ, env, clear=False),
+            patch.object(runtime_config, "IS_PRODUCTION", True),
+            patch.object(runtime_config, "CORS_ORIGINS", ["https://admin.example.net"]),
+            patch.object(runtime_config, "ALLOWED_HOSTS", ["localhost", "127.0.0.1"]),
+        ):
             with self.assertRaisesRegex(RuntimeError, "ALLOWED_HOSTS.*explicitly"):
                 runtime_config.validate_production_configuration()
 
