@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../core/network/api_client.dart';
+import '../../core/network/api_endpoints.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/theme/app_theme.dart';
 import '../support/support_page.dart';
@@ -176,9 +177,9 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _linkGoogle() async {
     if (_linkingGoogle) return;
-    if (_googleServerClientId.trim().isEmpty) {
+    if (!ApiEndpoints.googleServerClientIdConfigured) {
       _showMessage(
-        'إعداد GOOGLE_SERVER_CLIENT_ID غير موجود في نسخة التطبيق هذه.',
+        'معرّف Google غير صحيح أو غير مهيأ. أعد بناء التطبيق باستخدام معرّف Web OAuth الحقيقي.',
         error: true,
       );
       return;

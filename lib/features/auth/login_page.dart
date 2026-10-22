@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../core/network/api_client.dart';
+import '../../core/network/api_endpoints.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/theme/app_theme.dart';
 import 'models/auth_user.dart';
@@ -91,8 +92,8 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      if (_googleServerClientId.isEmpty) {
-        throw const ApiException(message: 'تسجيل Google غير مهيأ في هذا البناء. أعد بناء التطبيق باستخدام GOOGLE_SERVER_CLIENT_ID الصحيح.');
+      if (!ApiEndpoints.googleServerClientIdConfigured) {
+        throw const ApiException(message: 'تسجيل Google غير مهيأ. استخدم معرّف Web OAuth الحقيقي من Google Cloud في GOOGLE_SERVER_CLIENT_ID.');
       }
       final googleUser = await GoogleSignIn(serverClientId: _googleServerClientId).signIn();
       if (googleUser == null) {
