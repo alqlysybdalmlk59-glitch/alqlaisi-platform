@@ -91,7 +91,7 @@ class _AuthGateState extends State<AuthGate> {
     }
 
     if (_sessionController.isAuthenticated) {
-      return const CustomerShell();
+      return CustomerShell(accessToken: _sessionController.token ?? '');
     }
 
     if (_showRegister) {

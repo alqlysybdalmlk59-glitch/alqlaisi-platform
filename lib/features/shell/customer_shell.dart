@@ -9,7 +9,9 @@ import '../home/home_page.dart';
 import '../orders/orders_page.dart';
 
 class CustomerShell extends StatefulWidget {
-  const CustomerShell({super.key});
+  const CustomerShell({super.key, required this.accessToken});
+
+  final String accessToken;
 
   @override
   State<CustomerShell> createState() => _CustomerShellState();
@@ -32,6 +34,7 @@ class _CustomerShellState extends State<CustomerShell> {
             MaterialPageRoute<void>(
               builder: (_) => CheckoutPage(
                 cartService: cartService,
+                token: widget.accessToken,
               ),
             ),
           );
