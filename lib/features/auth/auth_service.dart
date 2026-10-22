@@ -1,7 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
-import '../../core/network/api_client.dart';
 import 'models/auth_user.dart' show AuthSession;
 import 'services/auth_service.dart' as api_auth;
 
