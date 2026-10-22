@@ -1,5 +1,6 @@
 """Fail-closed validation for production runtime configuration."""
 import os
+import re
 from urllib.parse import parse_qs, urlsplit
 from sqlalchemy import inspect
 
@@ -24,8 +25,11 @@ def validate_production_configuration() -> None:
     forbidden = ("replace", "change_me", "test-only", "your-secret", "example")
     if len(secret) < 48 or any(marker in secret.lower() for marker in forbidden):
         raise RuntimeError("Production requires a unique random JWT_SECRET_KEY of at least 48 characters.")
-    if not os.getenv("GOOGLE_CLIENT_ID", "").strip():
-        raise RuntimeError("Production requires GOOGLE_CLIENT_ID matching the app's Google server client ID.")
+    google_client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+    if not re.fullmatch(r"[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com", google_client_id):
+        raise RuntimeError(
+            "Production requires a real-format Google Web OAuth client ID; placeholders are not accepted."
+        )
     forwarded_allow_ips = os.getenv("FORWARDED_ALLOW_IPS", "").strip()
     if not forwarded_allow_ips:
         raise RuntimeError("Production requires explicit FORWARDED_ALLOW_IPS for trusted ingress proxies.")

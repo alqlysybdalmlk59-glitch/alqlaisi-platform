@@ -12,7 +12,7 @@ class TestProductionRuntimeConfig(unittest.TestCase):
             "APP_ENV": "production",
             "DATABASE_URL": "postgresql+psycopg://alqlaisi:password@db.example.net:5432/alqlaisi?sslmode=require",
             "JWT_SECRET_KEY": "a" * 64,
-            "GOOGLE_CLIENT_ID": "test-web-oauth-client-id.apps.googleusercontent.com",
+            "GOOGLE_CLIENT_ID": "1234567890-testclient.apps.googleusercontent.com",
             "ALLOWED_HOSTS": "api.example.net",
             "FORWARDED_ALLOW_IPS": "127.0.0.1",
         }
@@ -50,6 +50,16 @@ class TestProductionRuntimeConfig(unittest.TestCase):
              patch.object(runtime_config, "ALLOWED_HOSTS", ["api.example.net"]):
             with self.assertRaisesRegex(RuntimeError, "GOOGLE_CLIENT_ID"):
                 runtime_config.validate_production_configuration()
+
+    def test_production_rejects_placeholder_google_client_ids(self):
+        for client_id in ("", "YOUR_WEB_CLIENT_ID", "example.apps.googleusercontent.com"):
+            env = {**self.good_env, "GOOGLE_CLIENT_ID": client_id}
+            with patch.dict(os.environ, env, clear=False), \
+                 patch.object(runtime_config, "IS_PRODUCTION", True), \
+                 patch.object(runtime_config, "CORS_ORIGINS", ["https://admin.example.net"]), \
+                 patch.object(runtime_config, "ALLOWED_HOSTS", ["api.example.net"]):
+                with self.assertRaisesRegex(RuntimeError, "Google Web OAuth client ID"):
+                    runtime_config.validate_production_configuration()
 
     def test_production_rejects_missing_explicit_allowed_hosts(self):
         env = {**self.good_env, "ALLOWED_HOSTS": ""}
