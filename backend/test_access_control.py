@@ -75,7 +75,7 @@ class TestAlQulaisiSecurityRules(unittest.TestCase):
         )
 
     def test_password_hashing_and_verification(self):
-        """Test PBKDF2 hashing security and rejection of wrong passwords."""
+        """Test Argon2 password hashing and rejection of wrong passwords."""
         plain = "SuperSecret123!"
         hashed = hash_password(plain)
         self.assertTrue(verify_password(plain, hashed))
