@@ -58,3 +58,33 @@ jobs:
         run: flutter pub get
       - name: Analyze Flutter app
         run: flutter analyze
+
+  seller-flutter-analysis:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: seller_app
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install seller app dependencies
+        run: flutter pub get
+      - name: Analyze seller app
+        run: flutter analyze
+
+  admin-dashboard-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check admin dashboard JavaScript syntax
+        run: node --check admin_dashboard/app.js

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from models import DBOrder, DBProduct, DBVendorStore
 from schemas import CheckoutRequest, OrderSchema
-from routers.dependencies import get_db, get_current_principal, require_customer, require_seller_or_admin
+from routers.dependencies import get_db, get_current_principal, require_admin, require_customer, require_seller_or_admin
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 DELIVERED, CANCELLED = "تم التسليم", "ملغي"

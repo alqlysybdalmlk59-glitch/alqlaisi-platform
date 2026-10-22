@@ -76,6 +76,7 @@ class VendorStoreSchema(ORMModel):
     description: str = ""
     status: str
     admin_notes: Optional[str] = ""
+    delivery_fee: float = 15.0
 
 class VendorApplicationRequest(BaseModel):
     store_name: str = Field(min_length=2, max_length=120)
