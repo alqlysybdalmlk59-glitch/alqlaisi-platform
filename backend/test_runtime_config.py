@@ -48,7 +48,7 @@ class TestProductionRuntimeConfig(unittest.TestCase):
              patch.object(runtime_config, "IS_PRODUCTION", True), \
              patch.object(runtime_config, "CORS_ORIGINS", ["https://admin.example.net"]), \
              patch.object(runtime_config, "ALLOWED_HOSTS", ["api.example.net"]):
-            with self.assertRaisesRegex(RuntimeError, "GOOGLE_CLIENT_ID"):
+            with self.assertRaisesRegex(RuntimeError, "Google Web OAuth client ID"):
                 runtime_config.validate_production_configuration()
 
     def test_production_rejects_placeholder_google_client_ids(self):
