@@ -203,6 +203,50 @@ class TestAuthAPI(unittest.TestCase):
             headers={"Authorization": f"Bearer {seller_a}"})
         self.assertEqual(response.status_code, 403, response.text)
 
+    def test_admin_cannot_transfer_store_to_another_account_through_owner_link(self):
+        _seller_token, admin_token, store, _product_id = self._approved_store_and_product("777123486")
+        _other_token, other_user_id = self._register("777123487")
+        response = self.client.put(
+            f"/api/vendors/{store['id']}/owner",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"user_id": other_user_id},
+        )
+        self.assertEqual(response.status_code, 409, response.text)
+        with self.TestSession() as db:
+            current = db.query(models.DBVendorStore).filter_by(id=store["id"]).first()
+            self.assertEqual(current.owner_user_id, "u_777123486")
+
+    def test_admin_can_suspend_account_and_public_store_disappears(self):
+        seller_token, seller_id = self._register("777123489")
+        admin_token = self._admin_token()
+        application = self.client.post(
+            "/api/vendors/register",
+            headers={"Authorization": f"Bearer {seller_token}"},
+            json={"store_name": "متجر حساب سيوقف", "phone": "777123489", "description": ""},
+        )
+        self.assertEqual(application.status_code, 201, application.text)
+        store = application.json()
+        approval = self.client.put(
+            f"/api/vendors/{store['id']}/approve",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        self.assertEqual(approval.status_code, 200, approval.text)
+        before = self.client.get("/api/vendors/public")
+        self.assertIn(store["id"], [item["id"] for item in before.json()])
+
+        suspended = self.client.put(
+            f"/api/users/{seller_id}/status",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"status": "suspended"},
+        )
+        self.assertEqual(suspended.status_code, 200, suspended.text)
+        current = self.client.get(
+            "/auth/me", headers={"Authorization": f"Bearer {seller_token}"}
+        )
+        self.assertEqual(current.status_code, 403)
+        after = self.client.get("/api/vendors/public")
+        self.assertNotIn(store["id"], [item["id"] for item in after.json()])
+
     def test_rejected_store_can_be_resubmitted_without_changing_owner_link(self):
         customer_token, user_id = self._register("777123482")
         admin_token = self._admin_token()
@@ -289,7 +333,7 @@ class TestAuthAPI(unittest.TestCase):
                 response = self.client.post("/auth/google", json={"id_token": "mocked-unverified-token"})
                 self.assertEqual(response.status_code, 401, response.text)
             with patch.object(auth.google_id_token, "verify_oauth2_token", side_effect=ValueError("bad signature")):
-                response = self.client.post("/auth/google", json={"id_token": "mocked-bad-token"})
+                response = self.client.post("/auth/google", json={"id_token": "mocked-invalid-signature-token-123"})
                 self.assertEqual(response.status_code, 401, response.text)
 
     def test_google_login_cannot_turn_admin_email_into_customer_session(self):
@@ -309,7 +353,7 @@ class TestAuthAPI(unittest.TestCase):
         with patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "test-web-client-id"}), patch.object(
             auth.google_id_token, "verify_oauth2_token", return_value=claims
         ):
-            response = self.client.post("/auth/google", json={"id_token": "mocked-admin-token"})
+            response = self.client.post("/auth/google", json={"id_token": "mocked-admin-google-token-123"})
         self.assertEqual(response.status_code, 403, response.text)
 
     def test_google_login_fails_closed_when_not_configured(self):
