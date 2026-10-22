@@ -1,28 +1,23 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+"""Compatibility entry point for the unified Al Qulaisi API.
 
-from app.core.config import get_settings
+The legacy routers are still the currently implemented business API. Keep one
+FastAPI application until their data models and authentication are migrated.
+Run from the repository root with:
+    uvicorn backend.app.main:app --reload
+or, from backend/:
+    uvicorn main:app --reload
+"""
+from __future__ import annotations
 
-settings = get_settings()
+import sys
+from pathlib import Path
 
-app = FastAPI(
-    title=settings.app_name,
-    debug=settings.debug,
-    version="0.1.0",
-)
+_BACKEND_DIR = str(Path(__file__).resolve().parents[1])
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Import the single canonical app which currently mounts the existing business
+# routers. This avoids maintaining a second, health-only FastAPI application.
+from main import app  # noqa: E402
 
-
-@app.get("/api/v1/health", tags=["System"])
-def health_check() -> dict[str, str]:
-    return {
-        "status": "ok",
-        "application": settings.app_name,
-    }
+__all__ = ["app"]
