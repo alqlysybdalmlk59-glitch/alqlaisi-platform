@@ -4,7 +4,6 @@ import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/theme/app_theme.dart';
 import '../cart/services/cart_service.dart';
-import '../orders/models/order_result.dart';
 import '../orders/services/order_service.dart';
 
 class CheckoutPage extends StatefulWidget {
