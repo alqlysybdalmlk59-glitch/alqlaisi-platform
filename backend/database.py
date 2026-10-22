@@ -60,6 +60,16 @@ def ensure_schema_compatibility() -> None:
                 "ON users (google_subject) WHERE google_subject IS NOT NULL"
             ))
 
+    # Phone numbers are optional for Google-first accounts, but non-empty phones
+    # must be unique at the database layer as well as in route validation. This
+    # protects against two concurrent registrations/profile edits racing.
+    if "users" in tables and engine.dialect.name in {"sqlite", "postgresql"}:
+        with engine.begin() as connection:
+            connection.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_users_phone_nonempty "
+                "ON users (phone) WHERE phone IS NOT NULL AND phone <> ''"
+            ))
+
     # NULL ownership is allowed for legacy rows; duplicate non-null owner mappings are not.
     if "vendor_stores" in tables and engine.dialect.name in {"sqlite", "postgresql"}:
         with engine.begin() as connection:
