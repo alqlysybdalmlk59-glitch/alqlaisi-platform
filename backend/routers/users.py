@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 import database
 import models
-from schemas import UserSchema, BaseModel
+from schemas import UserSchema
 from pydantic import BaseModel as PydanticBase
 
 router = APIRouter(prefix="/api/users", tags=["Users & Authentication"])
@@ -24,7 +24,6 @@ class GoogleLoginRequest(PydanticBase):
     name: str
     photo_url: str = ""
 
-@post_route = router.post("/register", response_model=UserSchema)
 @router.post("/register", response_model=UserSchema)
 def register_user(user: UserSchema, db: Session = Depends(get_db)):
     existing = db.query(models.DBUser).filter(models.DBUser.email == user.email).first()
