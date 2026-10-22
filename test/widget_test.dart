@@ -45,6 +45,8 @@ void main() {
     await tester.pumpWidget(const AlQulaisiApp());
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.text('متابعة باستخدام Google'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('متابعة باستخدام Google'));
     await tester.pumpAndSettle();
 
@@ -55,5 +57,4 @@ void main() {
       findsOneWidget,
     );
   });
-
 }
