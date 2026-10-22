@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#123b35">
+  <title>إدارة منصة القليسي</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="loginScreen" class="login-shell">
+    <section class="login-card">
+      <div class="brand-mark">ق</div>
+      <p class="eyebrow">AL QULAISI · ADMIN</p>
+      <h1>لوحة إدارة القليسي</h1>
+      <p class="muted">سجّل الدخول بحساب إداري مُعتمد للوصول إلى إدارة المنصة.</p>
+      <form id="loginForm">
+        <label>عنوان API
+          <input id="apiBase" type="url" value="http://localhost:8000/api" required>
+        </label>
+        <label>رقم الهاتف الإداري
+          <input id="phone" type="tel" autocomplete="username" required placeholder="رقم الهاتف">
+        </label>
+        <label>كلمة المرور
+          <input id="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button class="primary full" type="submit">تسجيل الدخول</button>
+        <p id="loginError" class="error" role="alert"></p>
+      </form>
+      <p class="muted small">لا يتم إنشاء حساب مدير من هذه الشاشة. يجب تهيئة الحساب الإداري في الخادم بصورة موثوقة.</p>
+    </section>
+  </main>
+
+  <div id="workspace" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="side-brand"><span class="brand-mark small-mark">ق</span><div><strong>القليسي</strong><small>مركز الإدارة</small></div></div>
+      <nav id="navigation" aria-label="التنقل الإداري">
+        <button class="nav-item active" data-page="overview">نظرة عامة</button>
+        <button class="nav-item" data-page="stores">المتاجر والبائعون</button>
+        <button class="nav-item" data-page="products">المنتجات والمراجعة</button>
+        <button class="nav-item" data-page="orders">الطلبات والتوصيل</button>
+        <button class="nav-item" data-page="users">المستخدمون</button>
+        <button class="nav-item" data-page="support">الدعم والشكاوى</button>
+        <button class="nav-item" data-page="settings">الإعدادات والاتصال</button>
+      </nav>
+      <div class="side-bottom"><span id="adminIdentity">حساب الإدارة</span><button id="logoutButton" class="ghost">تسجيل الخروج</button></div>
+    </aside>
+    <section class="main-area">
+      <header class="topbar">
+        <div><p class="eyebrow">AL QULAISI PLATFORM</p><h1 id="pageTitle">نظرة عامة</h1></div>
+        <div class="top-actions"><span class="secure-label">واجهة إدارية محمية</span><button id="refreshButton" class="secondary">تحديث البيانات</button></div>
+      </header>
+      <div id="notice" class="notice hidden" role="status"></div>
+      <section id="pageContent" class="content" aria-live="polite"></section>
+      <footer>منصة القليسي · إدارة داخلية · التغييرات تُحفظ عبر الخادم</footer>
+    </section>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
