@@ -157,11 +157,11 @@ class _OrdersPageState extends State<OrdersPage> {
         Center(child: FilledButton(onPressed: _load, child: const Text('إعادة المحاولة'))),
       ]);
     } else if (_orders.isEmpty) {
-      content = const ListView(children: [
-        SizedBox(height: 140),
+      content = ListView(children: [
+        const SizedBox(height: 140),
         Icon(Icons.receipt_long_outlined, size: 58, color: AppTheme.muted),
-        SizedBox(height: 12),
-        Center(child: Text('لا توجد طلبات حتى الآن.')),
+        const SizedBox(height: 12),
+        const Center(child: Text('لا توجد طلبات حتى الآن.')),
       ]);
     } else {
       content = ListView.separated(
