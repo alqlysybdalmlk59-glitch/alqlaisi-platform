@@ -28,8 +28,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
       if (user is! Map || (user['id'] ?? '').toString().isEmpty) throw const FormatException();
       final data = await _api.get('/orders/client/${Uri.encodeComponent(user['id'].toString())}', token: widget.token);
       if (data is! List) throw const FormatException();
-      if (mounted) setState(() => _orders = data.whereType<Map>()
-        .map((row) => Map<String, dynamic>.from(row)).toList());
+      if (mounted) {
+        setState(() => _orders = data.whereType<Map>()
+            .map((row) => Map<String, dynamic>.from(row)).toList());
+      }
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.message);
     } catch (_) {

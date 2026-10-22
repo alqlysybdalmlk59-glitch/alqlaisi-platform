@@ -1,6 +1,7 @@
 """Integration tests for the customer authentication API using an isolated SQLite DB."""
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-not-for-production-0123456789")
 
