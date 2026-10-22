@@ -180,8 +180,9 @@ class _SellerAppState extends State<SellerApp> {
       page = const Scaffold(body: Center(child: CircularProgressIndicator()));
     } else if (_token == null || _user == null) {
       page = LoginPage(onLogin: _login);
-    } else if (_store == null) {
+    } else if (_store == null || _store!['status'] == 'مرفوض') {
       page = ApplyStorePage(api: _api, token: _token!, user: _user!,
+        existingStore: _store,
         onApplied: (value) => setState(() => _store = value), onLogout: _logout);
     } else if (_store!['status'] != 'مفعل') {
       page = StorePendingPage(store: _store!, onRefresh: _loadStore, onLogout: _logout);
@@ -257,10 +258,11 @@ class _LoginPageState extends State<LoginPage> {
 
 class ApplyStorePage extends StatefulWidget {
   const ApplyStorePage({super.key, required this.api, required this.token, required this.user,
-    required this.onApplied, required this.onLogout});
+    this.existingStore, required this.onApplied, required this.onLogout});
   final SellerApi api;
   final String token;
   final Map<String, dynamic> user;
+  final Map<String, dynamic>? existingStore;
   final ValueChanged<Map<String, dynamic>> onApplied;
   final VoidCallback onLogout;
   @override State<ApplyStorePage> createState() => _ApplyStorePageState();
@@ -274,8 +276,9 @@ class _ApplyStorePageState extends State<ApplyStorePage> {
   String? _error;
   @override void initState() {
     super.initState();
-    _name.text = (widget.user['name'] ?? widget.user['full_name'] ?? '').toString();
-    _phone.text = (widget.user['phone'] ?? '').toString();
+    _name.text = (widget.existingStore?['store_name'] ?? widget.user['name'] ?? widget.user['full_name'] ?? '').toString();
+    _phone.text = (widget.existingStore?['phone'] ?? widget.user['phone'] ?? '').toString();
+    _description.text = (widget.existingStore?['description'] ?? '').toString();
   }
   @override void dispose() { _name.dispose(); _phone.dispose(); _description.dispose(); super.dispose(); }
 
@@ -302,7 +305,9 @@ class _ApplyStorePageState extends State<ApplyStorePage> {
       Text('مرحباً ${widget.user['name'] ?? widget.user['full_name'] ?? ''}',
         style: Theme.of(context).textTheme.titleLarge),
       const SizedBox(height: 8),
-      const Text('قدّم طلبك؛ ستتمكن من إدارة المنتجات بعد اعتماد المتجر.'),
+      Text(widget.existingStore == null
+        ? 'قدّم طلبك؛ ستتمكن من إدارة المنتجات بعد اعتماد المتجر.'
+        : 'أعد تقديم طلب المتجر بعد معالجة ملاحظات المراجعة.'),
       const SizedBox(height: 18),
       TextField(controller: _name, decoration: const InputDecoration(labelText: 'اسم المتجر')),
       const SizedBox(height: 12),
@@ -314,7 +319,7 @@ class _ApplyStorePageState extends State<ApplyStorePage> {
       if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
       const SizedBox(height: 16),
       FilledButton(onPressed: _busy ? null : _submit,
-        child: Text(_busy ? 'جارٍ الإرسال...' : 'إرسال طلب اعتماد المتجر')),
+        child: Text(_busy ? 'جارٍ الإرسال...' : widget.existingStore == null ? 'إرسال طلب اعتماد المتجر' : 'إعادة تقديم الطلب')),
     ];
     return Scaffold(
       appBar: AppBar(title: const Text('طلب فتح متجر'),
