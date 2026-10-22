@@ -39,3 +39,7 @@ jobs:
         env:
           JWT_SECRET_KEY: test-only-secret-not-for-production-0123456789
         run: python -m unittest backend.test_access_control -v
+      - name: Run authentication API integration tests
+        env:
+          JWT_SECRET_KEY: test-only-secret-not-for-production-0123456789
+        run: python -m unittest backend.test_auth_api -v
