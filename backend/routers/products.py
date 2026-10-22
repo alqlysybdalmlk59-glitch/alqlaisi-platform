@@ -2,8 +2,8 @@ import math
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from models import DBProduct, DBUser, DBVendorStore
-from schemas import ProductApprovalRequest, ProductAvailabilityRequest, ProductCreateRequest, ProductUpdateRequest, ProductSchema
+from models import DBProduct, DBProductReview, DBUser, DBVendorStore
+from schemas import ProductApprovalRequest, ProductAvailabilityRequest, ProductCreateRequest, ProductUpdateRequest, ProductSchema, ProductReviewSchema
 from routers.dependencies import get_db, require_admin, require_seller_or_admin
 
 router = APIRouter(prefix="/api/products", tags=["products"])
@@ -138,3 +138,17 @@ def reject_product(product_id: str, notes: str = "", _principal: dict = Depends(
     product.admin_notes = notes[:2000]
     db.commit()
     return {"status": "rejected"}
+
+
+@router.get("/{product_id}/reviews", response_model=list[ProductReviewSchema])
+def get_product_reviews(product_id: str, db: Session = Depends(get_db)):
+    """Return public reviews with private account identifiers withheld."""
+    if db.query(DBProduct.id).filter(DBProduct.id == product_id).first() is None:
+        raise HTTPException(status_code=404, detail="المنتج غير موجود.")
+    return (
+        db.query(DBProductReview)
+        .filter(DBProductReview.product_id == product_id)
+        .order_by(DBProductReview.created_at.desc(), DBProductReview.id.desc())
+        .limit(100)
+        .all()
+    )

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, Boolean, Text, UniqueConstraint
+from sqlalchemy import Column, String, Float, Boolean, Text, Integer, UniqueConstraint
 from database import Base
 
 class DBUser(Base):
@@ -93,4 +93,21 @@ class DBVendorOwnershipHistory(Base):
     actor_user_id = Column(String, nullable=False, index=True)
     action = Column(String, nullable=False)
     verification_note = Column(Text, nullable=False)
+    created_at = Column(String, nullable=False)
+
+
+class DBProductReview(Base):
+    """Verified customer review for a product in a delivered order."""
+    __tablename__ = "product_reviews"
+    __table_args__ = (
+        UniqueConstraint("order_id", "product_id", name="uq_product_review_order_product"),
+    )
+
+    id = Column(String, primary_key=True, index=True)
+    product_id = Column(String, nullable=False, index=True)
+    order_id = Column(String, nullable=False, index=True)
+    client_id = Column(String, nullable=False, index=True)
+    reviewer_name = Column(String, nullable=False)
+    rating = Column(Integer, nullable=False)
+    comment = Column(Text, nullable=False, default="")
     created_at = Column(String, nullable=False)

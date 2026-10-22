@@ -142,3 +142,18 @@ class VendorOwnershipHistorySchema(ORMModel):
     action: str
     verification_note: str
     created_at: str
+
+
+class ProductReviewCreateRequest(BaseModel):
+    product_id: str = Field(min_length=1, max_length=100)
+    rating: int = Field(ge=1, le=5)
+    comment: str = Field(default="", max_length=1000)
+
+
+class ProductReviewSchema(ORMModel):
+    id: str
+    product_id: str
+    reviewer_name: str
+    rating: int
+    comment: str = ""
+    created_at: str
