@@ -98,3 +98,16 @@ jobs:
           node-version: "22"
       - name: Check admin dashboard JavaScript syntax
         run: node --check admin_dashboard/app.js
+
+  container-image-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Build API container image
+        run: docker build --pull --tag alqlaisi-api:ci .
+      - name: Verify container runs as non-root user
+        shell: bash
+        run: |
+          image_user="$(docker image inspect --format '{{.Config.User}}' alqlaisi-api:ci)"
+          test "$image_user" = "app"
