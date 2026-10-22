@@ -1,23 +1,80 @@
-"""Compatibility entry point for the unified Al Qulaisi API.
+"""Unified FastAPI application entry point.
 
-The legacy routers are still the currently implemented business API. Keep one
-FastAPI application until their data models and authentication are migrated.
-Run from the repository root with:
-    uvicorn backend.app.main:app --reload
-or, from backend/:
-    uvicorn main:app --reload
+Run from repository root: uvicorn backend.app.main:app --reload
+Run from backend directory: uvicorn app.main:app --reload
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 _BACKEND_DIR = str(Path(__file__).resolve().parents[1])
-if _BACKEND_DIR not in sys.path:
-    sys.path.insert(0, _BACKEND_DIR)
+_REPOSITORY_DIR = str(Path(__file__).resolve().parents[2])
+for _path in (_REPOSITORY_DIR, _BACKEND_DIR):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
-# Import the single canonical app which currently mounts the existing business
-# routers. This avoids maintaining a second, health-only FastAPI application.
-from main import app  # noqa: E402
+import database
+import models
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from routers import auth, orders, products, support, users, vendors
 
-__all__ = ["app"]
+models.Base.metadata.create_all(bind=database.engine)
+database.ensure_schema_compatibility()
+
+app = FastAPI(
+    title="منصة القليسي API - Alqlaisi Platform Central Backend",
+    description="الخادم المركزي لمنصة التجارة الإلكترونية متعددة البائعين",
+    version="1.1.1",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Preserve the currently implemented business routers while consolidating the
+# application object. The legacy auth routes fail closed; use /auth/* instead.
+app.include_router(products.router)
+app.include_router(orders.router)
+app.include_router(vendors.router)
+app.include_router(support.router)
+app.include_router(users.router)
+app.include_router(auth.router)
+
+
+@app.get("/")
+def root():
+    return {
+        "status": "online",
+        "system": "منصة القليسي للتجارة الإلكترونية",
+        "docs_url": "/docs",
+        "platform": "Windows / Cross-platform",
+    }
+
+
+@app.get("/health")
+@app.get("/api/health")
+def health_check():
+    return {
+        "status": "online",
+        "service": "Al-Qulaisi Backend API",
+        "version": "1.1.1",
+    }
+
+
+@app.get("/api/v1/health", tags=["System"])
+def versioned_health_check():
+    return {"status": "ok", "application": "Al Qulaisi", "version": "1.1.1"}
+
+
+@app.post("/api/ai/sales-insights")
+def get_ai_sales_insights(query: str = ""):
+    return {
+        "insights": "خدمة تحليل المبيعات التجريبية غير مرتبطة حالياً ببيانات المبيعات الفعلية."
+    }
