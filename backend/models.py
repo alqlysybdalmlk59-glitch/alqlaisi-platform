@@ -81,3 +81,16 @@ class DBOrderStatusHistory(Base):
     changed_by_role = Column(String, nullable=False)
     note = Column(Text, default="")
     created_at = Column(String, nullable=False)
+
+
+class DBVendorOwnershipHistory(Base):
+    """Audit record for store ownership linking and administrative lifecycle actions."""
+    __tablename__ = "vendor_ownership_history"
+    id = Column(String, primary_key=True, index=True)
+    store_id = Column(String, nullable=False, index=True)
+    previous_owner_user_id = Column(String, nullable=True)
+    new_owner_user_id = Column(String, nullable=True)
+    actor_user_id = Column(String, nullable=False, index=True)
+    action = Column(String, nullable=False)
+    verification_note = Column(Text, nullable=False)
+    created_at = Column(String, nullable=False)

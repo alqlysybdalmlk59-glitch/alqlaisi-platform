@@ -3,9 +3,9 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/theme/app_theme.dart';
+import '../support/support_page.dart';
 
 const String _googleServerClientId = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
-import '../support/support_page.dart';
 
 class ProfilePage extends StatefulWidget{
   const ProfilePage({super.key,required this.token,required this.onLogout});

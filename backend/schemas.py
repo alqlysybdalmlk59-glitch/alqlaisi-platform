@@ -106,6 +106,7 @@ class VendorApplicationRequest(BaseModel):
 
 class VendorOwnerLinkRequest(BaseModel):
     user_id: str = Field(min_length=1, max_length=100)
+    verification_note: str = Field(min_length=10, max_length=1000)
 
 class DeliveryFeeRequest(BaseModel):
     delivery_fee: float = Field(ge=0, le=100000, allow_inf_nan=False)
@@ -123,3 +124,14 @@ class SupportTicketSchema(ORMModel):
     details: str
     status: str = "مفتوحة"
     response: Optional[str] = ""
+
+
+class VendorOwnershipHistorySchema(ORMModel):
+    id: str
+    store_id: str
+    previous_owner_user_id: Optional[str] = None
+    new_owner_user_id: Optional[str] = None
+    actor_user_id: str
+    action: str
+    verification_note: str
+    created_at: str
