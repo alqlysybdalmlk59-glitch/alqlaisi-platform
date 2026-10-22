@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/cart/cart_scope.dart';
 import '../../core/theme/app_theme.dart';
 import '../cart/services/cart_service.dart';
+import '../favorites/favorites_store.dart';
 import 'models/product.dart';
 
 class ProductDetailsPage extends StatelessWidget {
@@ -25,7 +26,32 @@ class ProductDetailsPage extends StatelessWidget {
     final available = product.isAvailable;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('تفاصيل المنتج')),
+      appBar: AppBar(
+        title: const Text('تفاصيل المنتج'),
+        actions: [
+          AnimatedBuilder(
+            animation: FavoritesStore.instance,
+            builder: (context, _) {
+              final saved = FavoritesStore.instance.contains(product.id);
+              return IconButton(
+                tooltip: saved ? 'إزالة من المفضلة' : 'إضافة إلى المفضلة',
+                icon: Icon(saved ? Icons.favorite : Icons.favorite_border),
+                onPressed: () async {
+                  try {
+                    await FavoritesStore.instance.toggle(product);
+                  } catch (_) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('تعذر حفظ المفضلة على الجهاز.')),
+                      );
+                    }
+                  }
+                },
+              );
+            },
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

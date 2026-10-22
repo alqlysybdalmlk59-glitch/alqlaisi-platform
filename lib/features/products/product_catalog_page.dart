@@ -5,6 +5,9 @@ import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/theme/app_theme.dart';
 import '../stores/stores_page.dart';
+import '../favorites/favorites_page.dart';
+import '../favorites/favorites_store.dart';
+import '../notifications/notifications_page.dart';
 import 'models/product.dart';
 import 'product_details_page.dart';
 import 'services/product_service.dart';
@@ -14,6 +17,7 @@ class ProductCatalogPage extends StatefulWidget {
   final String title;
   final String? category;
   final bool showStoresShortcut;
+  final String? accessToken;
   @override State<ProductCatalogPage> createState() => _ProductCatalogPageState();
 }
 
@@ -25,7 +29,7 @@ class _ProductCatalogPageState extends State<ProductCatalogPage> {
   bool _loading = true;
   String? _error;
 
-  @override void initState() { super.initState(); _api=ApiClient(); _service=ProductService(_api); _load(); }
+  @override void initState() { super.initState(); _api=ApiClient(); _service=ProductService(_api); FavoritesStore.instance.load(); _load(); }
   @override void dispose() { _api.close(); _search.dispose(); super.dispose(); }
 
   Future<void> _load() async {
@@ -51,7 +55,23 @@ class _ProductCatalogPageState extends State<ProductCatalogPage> {
     }).toList();
     return Scaffold(
       appBar: AppBar(title:Text(widget.title),actions:[
-        if(widget.showStoresShortcut) IconButton(tooltip:'المتاجر',onPressed:()=>Navigator.of(context).push(MaterialPageRoute<void>(builder:(_)=>const StoresPage())),icon:const Icon(Icons.storefront_outlined)),
+        if(widget.showStoresShortcut) IconButton(
+          tooltip: 'المتاجر',
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const StoresPage())),
+          icon: const Icon(Icons.storefront_outlined),
+        ),
+        if(widget.showStoresShortcut) IconButton(
+          tooltip: 'المفضلة',
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const FavoritesPage())),
+          icon: const Icon(Icons.favorite_border),
+        ),
+        if(widget.showStoresShortcut && widget.accessToken != null) IconButton(
+          tooltip: 'تحديثات الطلبات',
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+            builder: (_) => NotificationsPage(token: widget.accessToken!),
+          )),
+          icon: const Icon(Icons.notifications_none),
+        ),
         IconButton(tooltip:'تحديث المنتجات',onPressed:_load,icon:const Icon(Icons.refresh)),
       ]),
       body:RefreshIndicator(onRefresh:_load,child:ListView(padding:const EdgeInsets.all(16),children:[

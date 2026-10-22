@@ -27,7 +27,7 @@ class _CustomerShellState extends State<CustomerShell> {
     final cartService = CartScope.of(context);
 
     final pages = <Widget>[
-      const HomePage(),
+      HomePage(token: widget.accessToken),
       const CategoryPage(),
       CartPage(
         cartService: cartService,
