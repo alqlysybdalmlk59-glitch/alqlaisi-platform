@@ -29,6 +29,6 @@ class _StoresPageState extends State<StoresPage>{
         return Card(child:ListTile(leading:const CircleAvatar(backgroundColor:Color(0xFFE0F0EA),child:Icon(Icons.storefront,color:AppTheme.primary)),
           title:Text((store['store_name']??'متجر القليسي').toString()),subtitle:Text('${store['description']??''}\nالتوصيل: يحسب لكل طلب وفق رسوم المتجر'),
           isThreeLine:true,trailing:const Icon(Icons.chevron_left),onTap:()=>Navigator.of(context).push(MaterialPageRoute<void>(
-            builder:(_)=>ProductCatalogPage(title:(store['store_name']??'المنتجات').toString())))));
+            builder:(_)=>ProductCatalogPage(title:(store['store_name']??'المنتجات').toString(),storeId:store['id']?.toString())))));
       }));
 }

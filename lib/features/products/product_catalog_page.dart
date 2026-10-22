@@ -13,9 +13,10 @@ import 'product_details_page.dart';
 import 'services/product_service.dart';
 
 class ProductCatalogPage extends StatefulWidget {
-  const ProductCatalogPage({super.key, required this.title, this.category, this.showStoresShortcut = false, this.accessToken});
+  const ProductCatalogPage({super.key, required this.title, this.category, this.storeId, this.showStoresShortcut = false, this.accessToken});
   final String title;
   final String? category;
+  final String? storeId;
   final bool showStoresShortcut;
   final String? accessToken;
   @override State<ProductCatalogPage> createState() => _ProductCatalogPageState();
@@ -50,8 +51,9 @@ class _ProductCatalogPageState extends State<ProductCatalogPage> {
     final query=_search.text.trim().toLowerCase();
     final visible=_products.where((p) {
       final matchCategory=widget.category==null||p.category==widget.category;
+      final matchStore=widget.storeId==null||p.storeId==widget.storeId;
       final matchSearch=query.isEmpty||p.name.toLowerCase().contains(query)||p.storeName.toLowerCase().contains(query)||p.category.toLowerCase().contains(query);
-      return matchCategory&&matchSearch;
+      return matchCategory&&matchStore&&matchSearch;
     }).toList();
     return Scaffold(
       appBar: AppBar(title:Text(widget.title),actions:[
@@ -91,7 +93,7 @@ class _ProductCatalogPageState extends State<ProductCatalogPage> {
         else if(_error!=null&&_products.isEmpty) _ErrorBlock(message:_error!,onRetry:_load)
         else if(visible.isEmpty) Padding(padding:const EdgeInsets.all(30),child:Center(child:Text(query.isEmpty?'لا توجد منتجات منشورة ومتاحة حالياً.':'لا توجد نتائج مطابقة للبحث.')))
         else ...[
-          Text(widget.category==null?'المنتجات المتاحة':'تصنيف: ${widget.category}',style:Theme.of(context).textTheme.titleLarge),
+          Text(widget.storeId != null ? widget.title : widget.category==null?'المنتجات المتاحة':'تصنيف: ${widget.category}',style:Theme.of(context).textTheme.titleLarge),
           const SizedBox(height:12),
           LayoutBuilder(builder:(context,constraints){
             final columns=constraints.maxWidth>900?4:constraints.maxWidth>600?3:2;
