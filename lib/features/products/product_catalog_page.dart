@@ -13,7 +13,7 @@ import 'product_details_page.dart';
 import 'services/product_service.dart';
 
 class ProductCatalogPage extends StatefulWidget {
-  const ProductCatalogPage({super.key, required this.title, this.category, this.showStoresShortcut = false});
+  const ProductCatalogPage({super.key, required this.title, this.category, this.showStoresShortcut = false, this.accessToken});
   final String title;
   final String? category;
   final bool showStoresShortcut;
