@@ -5,6 +5,7 @@ seller/admin access must be provisioned through an approved administrative flow.
 """
 from __future__ import annotations
 
+import os
 import re
 from datetime import timedelta
 from typing import Any
@@ -12,6 +13,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 
 import database
 import models
@@ -44,6 +47,10 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     phone: str = Field(min_length=8, max_length=20)
     password: str = Field(min_length=1, max_length=100)
+
+
+class GoogleLoginRequest(BaseModel):
+    id_token: str = Field(min_length=20, max_length=8192)
 
 
 def _normalise_phone(phone: str) -> str:
@@ -131,6 +138,76 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     account_status = getattr(user, "status", "active") or "active"
     if account_status != "active":
         raise HTTPException(status_code=403, detail="الحساب غير نشط أو قيد المراجعة.")
+    return _session(user)
+
+
+@router.post("/google")
+def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
+    """Authenticate a customer using a Google-issued ID token verified server-side."""
+    client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+    if not client_id:
+        raise HTTPException(
+            status_code=503,
+            detail="تسجيل الدخول بواسطة Google غير مهيأ على الخادم.",
+        )
+
+    try:
+        claims = google_id_token.verify_oauth2_token(
+            payload.id_token,
+            google_requests.Request(),
+            audience=client_id,
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail="رمز Google غير صالح أو منتهي الصلاحية.",
+        )
+
+    subject = claims.get("sub")
+    email = (claims.get("email") or "").strip().lower()
+    email_verified = claims.get("email_verified") is True
+    name = (claims.get("name") or "").strip()
+
+    if not subject or not email or not email_verified:
+        raise HTTPException(
+            status_code=401,
+            detail="يتطلب تسجيل الدخول بريدًا إلكترونيًا موثقًا من Google.",
+        )
+
+    user = db.query(models.DBUser).filter(models.DBUser.email == email).first()
+    if user is None:
+        # Stable provider subject avoids deriving an account ID from user input.
+        user = models.DBUser(
+            id=f"google_{subject}",
+            name=name or email.split("@", 1)[0],
+            email=email,
+            role="CLIENT",
+            phone="",
+            address="",
+            password_hash=None,
+            status="active",
+        )
+        db.add(user)
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            # Handle concurrent first sign-in without silently accepting bad claims.
+            user = db.query(models.DBUser).filter(models.DBUser.email == email).first()
+            if user is None:
+                raise HTTPException(status_code=409, detail="تعذر إنشاء حساب Google؛ حاول مجددًا.")
+    else:
+        if user.role.upper() not in {"CLIENT", "CUSTOMER"}:
+            raise HTTPException(status_code=403, detail="هذا الحساب غير مخصص لتطبيق العملاء.")
+        account_status = getattr(user, "status", "active") or "active"
+        if account_status != "active":
+            raise HTTPException(status_code=403, detail="الحساب غير نشط أو قيد المراجعة.")
+
+    if user.role.upper() not in {"CLIENT", "CUSTOMER"}:
+        raise HTTPException(status_code=403, detail="هذا الحساب غير مخصص لتطبيق العملاء.")
+    if (getattr(user, "status", "active") or "active") != "active":
+        raise HTTPException(status_code=403, detail="الحساب غير نشط أو قيد المراجعة.")
+
     return _session(user)
 
 
