@@ -17,9 +17,12 @@ for _path in (_REPOSITORY_DIR, _BACKEND_DIR):
 
 import database
 import models
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers import auth, orders, products, support, users, vendors
+from routers.dependencies import get_db, require_customer
+from schemas import CheckoutRequest, OrderSchema
+from typing import List
 
 models.Base.metadata.create_all(bind=database.engine)
 database.ensure_schema_compatibility()
@@ -32,8 +35,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=os.getenv("CORS_ALLOW_ORIGINS", "*").split(","),
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -46,6 +49,8 @@ app.include_router(vendors.router)
 app.include_router(support.router)
 app.include_router(users.router)
 app.include_router(auth.router)
+# Compatibility prefix for Flutter ApiClient, whose configured base URL ends with /api.
+app.include_router(auth.router, prefix="/api")
 
 
 @app.get("/")
@@ -78,3 +83,13 @@ def get_ai_sales_insights(query: str = ""):
     return {
         "insights": "خدمة تحليل المبيعات التجريبية غير مرتبطة حالياً ببيانات المبيعات الفعلية."
     }
+
+
+@app.post("/api/checkout", response_model=List[OrderSchema], status_code=201, tags=["orders"])
+def checkout_from_flutter(
+    payload: CheckoutRequest,
+    principal: dict = Depends(require_customer),
+    db=Depends(get_db),
+):
+    """Checkout contract used by the customer Flutter app."""
+    return orders.create_orders(payload, principal, db)

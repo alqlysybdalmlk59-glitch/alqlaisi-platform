@@ -64,18 +64,28 @@ def _public_user(user: models.DBUser) -> dict[str, Any]:
         "name": user.name,
         "phone": user.phone or "",
         "email": user.email if not user.email.endswith("@accounts.alqulaisi.invalid") else None,
-        "role": "customer" if user.role.upper() in {"CLIENT", "CUSTOMER"} else user.role.lower(),
+        "role": (
+            "customer" if user.role.upper() in {"CLIENT", "CUSTOMER"}
+            else "seller" if user.role.upper() in {"VENDOR", "SELLER"}
+            else user.role.lower()
+        ),
         "status": getattr(user, "status", "active") or "active",
+        "store_id": getattr(user, "store_id", None),
     }
 
 
 def _session(user: models.DBUser) -> dict[str, Any]:
-    role = "customer" if user.role.upper() in {"CLIENT", "CUSTOMER"} else user.role.lower()
+    role = (
+        "customer" if user.role.upper() in {"CLIENT", "CUSTOMER"}
+        else "seller" if user.role.upper() in {"VENDOR", "SELLER"}
+        else user.role.lower()
+    )
     token = create_access_token({
         "sub": str(user.id),
         "email": user.email,
         "role": role,
         "status": getattr(user, "status", "active") or "active",
+        "store_id": getattr(user, "store_id", None),
     }, expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     return {"access_token": token, "token_type": "bearer", "user": _public_user(user)}
 

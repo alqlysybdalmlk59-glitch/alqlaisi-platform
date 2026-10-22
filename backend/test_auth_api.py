@@ -11,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.main import app
 import models
+import database
 from routers import auth, dependencies
 
 
@@ -34,6 +35,7 @@ class TestAuthAPI(unittest.TestCase):
 
         app.dependency_overrides[auth.get_db] = override_get_db
         app.dependency_overrides[dependencies.get_db] = override_get_db
+        app.dependency_overrides[database.get_db] = override_get_db
         cls.client = TestClient(app)
 
     @classmethod
@@ -43,6 +45,10 @@ class TestAuthAPI(unittest.TestCase):
 
     def setUp(self):
         with self.TestSession() as db:
+            db.query(models.DBSupportTicket).delete()
+            db.query(models.DBOrder).delete()
+            db.query(models.DBProduct).delete()
+            db.query(models.DBVendorStore).delete()
             db.query(models.DBUser).delete()
             db.commit()
 
@@ -84,6 +90,112 @@ class TestAuthAPI(unittest.TestCase):
         token = response.json()["access_token"]
         result = self.client.get("/api/vendors/", headers={"Authorization": f"Bearer {token}"})
         self.assertEqual(result.status_code, 403, result.text)
+
+    def _register(self, phone):
+        response = self.client.post("/auth/register", json={
+            "full_name": "مستخدم تجريبي", "phone": phone, "password": "SecurePass123",
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()["access_token"], response.json()["user"]["id"]
+
+    def _admin_token(self):
+        with self.TestSession() as db:
+            admin = models.DBUser(id="admin_test", name="مدير الاختبار",
+                email="admin-test@example.com", role="ADMIN", phone="700000000",
+                address="", password_hash=None, status="active")
+            db.add(admin)
+            db.commit()
+            db.refresh(admin)
+            return auth._session(admin)["access_token"]
+
+    def _approved_store_and_product(self, seller_phone="777123470"):
+        seller_token, _ = self._register(seller_phone)
+        admin_token = self._admin_token()
+        app_response = self.client.post("/api/vendors/register",
+            headers={"Authorization": f"Bearer {seller_token}"},
+            json={"store_name": "متجر اختبار", "phone": seller_phone, "description": "اختبار"})
+        self.assertEqual(app_response.status_code, 201, app_response.text)
+        store = app_response.json()
+        approved = self.client.put(f"/api/vendors/{store['id']}/approve",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(approved.status_code, 200, approved.text)
+        created = self.client.post("/api/products/",
+            headers={"Authorization": f"Bearer {seller_token}"},
+            json={"title": "دفتر اختبار", "description": "وصف", "image_url": "",
+                  "category": "قرطاسية", "price": 1, "vendor_id": "forged-store",
+                  "review_status": "منشور", "is_available": True})
+        self.assertEqual(created.status_code, 201, created.text)
+        product = created.json()
+        self.assertEqual(product["vendor_id"], store["id"])
+        self.assertEqual(product["price"], 0)
+        self.assertEqual(product["review_status"], "قيد المراجعة")
+        priced = self.client.put(f"/api/products/{product['id']}/approve",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"sale_price": 175, "approved": True, "admin_notes": "سعر الإدارة"})
+        self.assertEqual(priced.status_code, 200, priced.text)
+        available = self.client.put(f"/api/products/{product['id']}/availability",
+            headers={"Authorization": f"Bearer {seller_token}"}, json={"is_available": True})
+        self.assertEqual(available.status_code, 200, available.text)
+        return seller_token, admin_token, store, product["id"]
+
+    def test_vendor_application_binds_owner_and_approval_promotes_role(self):
+        customer_token, user_id = self._register("777123461")
+        admin_token = self._admin_token()
+        response = self.client.post("/api/vendors/register",
+            headers={"Authorization": f"Bearer {customer_token}"},
+            json={"store_name": "متجر عبد", "phone": "777123461", "description": "طلب"})
+        self.assertEqual(response.status_code, 201, response.text)
+        store = response.json()
+        with self.TestSession() as db:
+            saved = db.query(models.DBVendorStore).filter_by(id=store["id"]).first()
+            self.assertEqual(saved.owner_user_id, user_id)
+        approved = self.client.put(f"/api/vendors/{store['id']}/approve",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(approved.status_code, 200, approved.text)
+        me = self.client.get("/auth/me", headers={"Authorization": f"Bearer {customer_token}"})
+        self.assertEqual(me.status_code, 200, me.text)
+        self.assertEqual(me.json()["role"], "seller")
+        self.assertEqual(me.json()["store_id"], store["id"])
+
+    def test_checkout_uses_server_prices_and_fee_not_client_values(self):
+        seller_token, _admin, store, product_id = self._approved_store_and_product()
+        buyer_token, buyer_id = self._register("777123471")
+        response = self.client.post("/api/checkout",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+            json={"recipient_name": "عميل الطلب", "phone": "777999000",
+                "delivery_address": "صنعاء، الحي، الشارع", "notes": "",
+                "payment_method": "cash_on_delivery",
+                "items": [{"product_id": product_id, "quantity": 2, "price": 0.5}],
+                "total_price": 1, "delivery_fee": 0})
+        self.assertEqual(response.status_code, 201, response.text)
+        order = response.json()[0]
+        self.assertEqual(order["client_id"], buyer_id)
+        self.assertEqual(order["vendor_id"], store["id"])
+        self.assertEqual(order["items_price"], 350)
+        self.assertEqual(order["delivery_fee"], 15)
+        self.assertEqual(order["total_price"], 365)
+        self.assertEqual(order["payment_method"], "الدفع عند الاستلام")
+        self.assertEqual(order["status"], "بانتظار القبول")
+        listed = self.client.get(f"/api/orders/vendor/{store['id']}",
+            headers={"Authorization": f"Bearer {seller_token}"})
+        self.assertEqual(listed.status_code, 200, listed.text)
+        self.assertEqual(len(listed.json()), 1)
+
+    def test_seller_cannot_access_another_store_products(self):
+        seller_a, _admin, _store_a, _product_a = self._approved_store_and_product("777123472")
+        seller_b_token, _ = self._register("777123473")
+        admin_b = self._admin_token()
+        app_b = self.client.post("/api/vendors/register",
+            headers={"Authorization": f"Bearer {seller_b_token}"},
+            json={"store_name": "متجر ثان", "phone": "777123473", "description": ""})
+        self.assertEqual(app_b.status_code, 201, app_b.text)
+        store_b = app_b.json()
+        approved = self.client.put(f"/api/vendors/{store_b['id']}/approve",
+            headers={"Authorization": f"Bearer {admin_b}"})
+        self.assertEqual(approved.status_code, 200, approved.text)
+        response = self.client.get(f"/api/products/vendor/{store_b['id']}",
+            headers={"Authorization": f"Bearer {seller_a}"})
+        self.assertEqual(response.status_code, 403, response.text)
 
     def test_google_login_fails_closed_when_not_configured(self):
         import os
