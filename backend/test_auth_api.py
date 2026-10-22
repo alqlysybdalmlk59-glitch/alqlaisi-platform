@@ -202,6 +202,28 @@ class TestAuthAPI(unittest.TestCase):
             headers={"Authorization": f"Bearer {seller_a}"})
         self.assertEqual(response.status_code, 403, response.text)
 
+    def test_rejected_store_can_be_resubmitted_without_changing_owner_link(self):
+        customer_token, user_id = self._register("777123482")
+        admin_token = self._admin_token()
+        first = self.client.post("/api/vendors/register",
+            headers={"Authorization": f"Bearer {customer_token}"},
+            json={"store_name": "متجر يحتاج مراجعة", "phone": "777123482", "description": "الأول"})
+        self.assertEqual(first.status_code, 201, first.text)
+        store_id = first.json()["id"]
+        rejected = self.client.put(f"/api/vendors/{store_id}/reject",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(rejected.status_code, 200, rejected.text)
+        second = self.client.post("/api/vendors/register",
+            headers={"Authorization": f"Bearer {customer_token}"},
+            json={"store_name": "متجر بعد التعديل", "phone": "777123483", "description": "بعد معالجة الملاحظات"})
+        self.assertEqual(second.status_code, 201, second.text)
+        self.assertEqual(second.json()["id"], store_id)
+        self.assertEqual(second.json()["status"], "قيد المراجعة")
+        with self.TestSession() as db:
+            saved = db.query(models.DBVendorStore).filter_by(id=store_id).first()
+            self.assertEqual(saved.owner_user_id, user_id)
+            self.assertEqual(saved.store_name, "متجر بعد التعديل")
+
     def test_google_login_fails_closed_when_not_configured(self):
         import os
         previous = os.environ.pop("GOOGLE_CLIENT_ID", None)
