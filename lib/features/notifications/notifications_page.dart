@@ -145,8 +145,8 @@ class _NotificationsPageState extends State<NotificationsPage>
                 ),
                 title: Text('تحديث الطلب ${order['order_id'] ?? ''}'),
                 subtitle: Text(
-                  '${order['old_status'] ?? 'تم إنشاء الطلب'} ← $status\\n'
-                  'المتجر: ${order['vendor_name'] ?? ''} · الإجمالي: ${order['total_price'] ?? 0} ريال\\n'
+                  '${order['old_status'] ?? 'تم إنشاء الطلب'} ← $status\n'
+                  'المتجر: ${order['vendor_name'] ?? ''} · الإجمالي: ${order['total_price'] ?? 0} ريال\n'
                   '${order['note'] ?? ''} · ${order['created_at'] ?? ''}',
                 ),
                 isThreeLine: true,
