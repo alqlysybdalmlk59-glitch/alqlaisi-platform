@@ -62,6 +62,10 @@ jobs:
         run: flutter pub get
       - name: Analyze Flutter app
         run: flutter analyze lib
+      - name: Run customer validation tests
+        run: flutter test
+      - name: Build customer Android debug APK
+        run: flutter build apk --debug --dart-define=API_BASE_URL=http://10.0.2.2:8000/api
 
   seller-flutter-analysis:
     runs-on: ubuntu-latest
@@ -80,6 +84,8 @@ jobs:
         run: flutter pub get
       - name: Analyze seller app
         run: flutter analyze
+      - name: Build seller Android debug APK
+        run: flutter build apk --debug --dart-define=API_BASE_URL=http://10.0.2.2:8000/api
 
   admin-dashboard-check:
     runs-on: ubuntu-latest

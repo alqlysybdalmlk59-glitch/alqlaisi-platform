@@ -1,11 +1,19 @@
 plugins {
     id("com.android.application")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val releaseStorePath = System.getenv("ALQLAISI_ANDROID_KEYSTORE_PATH")
+val releaseStorePassword = System.getenv("ALQLAISI_ANDROID_KEYSTORE_PASSWORD")
+val releaseKeyAlias = System.getenv("ALQLAISI_ANDROID_KEY_ALIAS")
+val releaseKeyPassword = System.getenv("ALQLAISI_ANDROID_KEY_PASSWORD")
+val releaseSigningConfigured =
+    listOf(releaseStorePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword)
+        .all { !it.isNullOrBlank() } &&
+        releaseStorePath?.let { file(it).isFile } == true
+
 android {
-    namespace = "com.example.alqulaisi_platform"
+    namespace = "com.alqlaisi.platform"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -15,22 +23,53 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.alqulaisi_platform"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
+        applicationId = "com.alqlaisi.platform"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = file(releaseStorePath!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Never sign a production artifact using Android's publicly-known debug key.
+            signingConfig = if (releaseSigningConfigured) {
+                signingConfigs.getByName("release")
+            } else {
+                null
+            }
         }
+    }
+}
+
+val verifyReleaseSigning = tasks.register("verifyReleaseSigning") {
+    doLast {
+        if (!releaseSigningConfigured) {
+            throw GradleException(
+                "Release signing is not configured. Set ALQLAISI_ANDROID_KEYSTORE_PATH, " +
+                    "ALQLAISI_ANDROID_KEYSTORE_PASSWORD, ALQLAISI_ANDROID_KEY_ALIAS and " +
+                    "ALQLAISI_ANDROID_KEY_PASSWORD. Debug signing is intentionally not used for releases."
+            )
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name.contains("Release") &&
+        (name.startsWith("assemble") || name.startsWith("bundle") || name.startsWith("package"))
+    ) {
+        dependsOn(verifyReleaseSigning)
     }
 }
 
