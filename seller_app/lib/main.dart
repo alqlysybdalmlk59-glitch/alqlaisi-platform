@@ -28,31 +28,62 @@ class SellerApi {
   Future<void> saveToken(String token) => _storage.write(key: _tokenKey, value: token);
   Future<void> clearToken() => _storage.delete(key: _tokenKey);
 
-  Future<dynamic> request(String path, {String method = 'GET', String? token, Map<String, dynamic>? body}) async {
-    final root = _apiBase.replaceAll(RegExp(r'/+
+  Future<dynamic> request(
+    String path, {
+    String method = 'GET',
+    String? token,
+    Map<String, dynamic>? body,
+  }) async {
+    final root = _apiBase.replaceAll(RegExp(r'/+$'), '');
+    final baseUri = Uri.tryParse(root);
+    if (baseUri == null || baseUri.host.isEmpty) {
+      throw const SellerApiException('عنوان API غير صالح.');
+    }
+    if (kReleaseMode &&
+        (baseUri.scheme != 'https' || baseUri.userInfo.isNotEmpty)) {
+      throw const SellerApiException(
+        'نسخة الإنتاج تمنع إرسال بيانات الدخول عبر HTTP. '
+        'أعد البناء بعنوان API_BASE_URL يبدأ بـ https://.',
+      );
+    }
+
+    final uri = Uri.parse(root + path);
+    final headers = <String, String>{
       'Accept': 'application/json',
       if (body != null) 'Content-Type': 'application/json',
-      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer ' + token,
     };
+
     late http.Response response;
     try {
       if (method == 'POST') {
-        response = await _client.post(uri, headers: headers, body: body == null ? null : jsonEncode(body));
+        response = await _client.post(
+          uri,
+          headers: headers,
+          body: body == null ? null : jsonEncode(body),
+        );
       } else if (method == 'PUT') {
-        response = await _client.put(uri, headers: headers, body: body == null ? null : jsonEncode(body));
+        response = await _client.put(
+          uri,
+          headers: headers,
+          body: body == null ? null : jsonEncode(body),
+        );
       } else {
         response = await _client.get(uri, headers: headers);
       }
     } catch (_) {
       throw const SellerApiException('تعذر الاتصال بالخادم. تحقق من عنوان API.');
     }
+
     dynamic decoded;
     try {
       if (response.body.isNotEmpty) decoded = jsonDecode(response.body);
     } catch (_) {}
+
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = decoded is Map ? (decoded['detail'] ?? decoded['message']) : null;
-      throw SellerApiException(detail?.toString() ?? 'فشل الطلب (${response.statusCode}).');
+      final message = detail?.toString() ?? 'فشل الطلب (' + response.statusCode.toString() + ').';
+      throw SellerApiException(message);
     }
     return decoded;
   }
