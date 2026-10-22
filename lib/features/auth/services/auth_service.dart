@@ -42,6 +42,19 @@ class AuthService {
     return _parseSession(response);
   }
 
+  Future<AuthSession> signInWithGoogle({required String idToken}) async {
+    if (idToken.trim().isEmpty) {
+      throw const ApiException(message: 'لم يتم استلام رمز Google صالح.');
+    }
+
+    final response = await _client.post(
+      ApiEndpoints.googleLogin,
+      body: {'id_token': idToken},
+    );
+
+    return _parseSession(response);
+  }
+
   Future<AuthUser> getCurrentUser(String token) async {
     final response = await _client.get(
       ApiEndpoints.currentUser,
