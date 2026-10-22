@@ -121,6 +121,60 @@ def get_vendor_orders(vendor_id: str, principal: dict = Depends(require_seller_o
         raise HTTPException(status_code=403, detail="لا يمكنك الاطلاع على طلبات متجر آخر.")
     return db.query(DBOrder).filter(DBOrder.vendor_id == vendor_id).order_by(DBOrder.date.desc()).all()
 
+@router.get("/vendor/{vendor_id}/summary")
+def get_vendor_sales_summary(
+    vendor_id: str,
+    principal: dict = Depends(require_seller_or_admin),
+    db: Session = Depends(get_db),
+):
+    if principal["role"] != "ADMIN" and principal.get("store_id") != vendor_id:
+        raise HTTPException(status_code=403, detail="لا يمكنك الاطلاع على تقارير متجر آخر.")
+    store = db.query(DBVendorStore).filter(DBVendorStore.id == vendor_id).first()
+    if store is None:
+        raise HTTPException(status_code=404, detail="المتجر غير موجود")
+
+    orders = db.query(DBOrder).filter(DBOrder.vendor_id == vendor_id).all()
+    status_counts: dict[str, int] = defaultdict(int)
+    delivered_gross = Decimal("0.00")
+    pending_statuses = {"بانتظار القبول", "قيد التجهيز", "جاهز للتوصيل", "قيد التوصيل"}
+    pending_count = 0
+    cancelled_count = 0
+
+    for order in orders:
+        status_counts[order.status] += 1
+        if order.status in pending_statuses:
+            pending_count += 1
+        elif order.status == CANCELLED:
+            cancelled_count += 1
+        elif order.status == DELIVERED:
+            try:
+                value = Decimal(str(order.total_price))
+                if not value.is_finite() or value < 0:
+                    raise InvalidOperation
+                delivered_gross += value
+            except InvalidOperation:
+                raise HTTPException(
+                    status_code=409,
+                    detail="توجد قيمة طلب غير صالحة في البيانات المالية؛ راجع سجل الطلب.",
+                )
+
+    return {
+        "store_id": store.id,
+        "store_name": store.store_name,
+        "currency": "YER",
+        "order_count": len(orders),
+        "pending_count": pending_count,
+        "delivered_count": status_counts[DELIVERED],
+        "cancelled_count": cancelled_count,
+        "delivered_gross_value": float(delivered_gross.quantize(Decimal("0.01"))),
+        "status_counts": dict(status_counts),
+        "commission_configured": False,
+        "commission_percent": None,
+        "commission_value": None,
+        "commission_note": "لم تُحدد نسبة العمولة بعد؛ لذلك لا يتم احتساب عمولة أو تسوية مالية.",
+    }
+
+
 @router.get("/{order_id}/history", response_model=list[OrderStatusHistorySchema])
 def get_order_status_history(
     order_id: str,
