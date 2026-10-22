@@ -68,6 +68,19 @@ class TestAuthAPI(unittest.TestCase):
         self.assertEqual(me.status_code, 200, me.text)
         self.assertEqual(me.json()["phone"], "777123456")
 
+    def test_google_login_fails_closed_when_not_configured(self):
+        import os
+        previous = os.environ.pop("GOOGLE_CLIENT_ID", None)
+        try:
+            response = self.client.post(
+                "/auth/google",
+                json={"id_token": "not-a-real-google-token-long-enough"},
+            )
+            self.assertEqual(response.status_code, 503)
+        finally:
+            if previous is not None:
+                os.environ["GOOGLE_CLIENT_ID"] = previous
+
     def test_wrong_password_is_rejected(self):
         self.client.post("/auth/register", json={
             "full_name": "عميل تجريبي",
