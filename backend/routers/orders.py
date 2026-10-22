@@ -3,9 +3,10 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from models import DBOrder, DBOrderStatusHistory, DBProduct, DBUser, DBVendorStore
-from schemas import CheckoutRequest, OrderSchema, OrderStatusHistorySchema
+from models import DBOrder, DBOrderStatusHistory, DBProduct, DBProductReview, DBUser, DBVendorStore
+from schemas import CheckoutRequest, OrderSchema, OrderStatusHistorySchema, ProductReviewCreateRequest, ProductReviewSchema
 from routers.dependencies import get_db, get_current_principal, require_admin, require_customer, require_seller_or_admin
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
@@ -173,6 +174,120 @@ def get_vendor_sales_summary(
         "commission_value": None,
         "commission_note": "لم تُحدد نسبة العمولة بعد؛ لذلك لا يتم احتساب عمولة أو تسوية مالية.",
     }
+
+
+@router.get("/notifications/mine")
+def get_my_order_notifications(
+    principal: dict = Depends(require_customer),
+    db: Session = Depends(get_db),
+):
+    """Return persisted order lifecycle events for the authenticated customer only."""
+    rows = (
+        db.query(DBOrderStatusHistory, DBOrder)
+        .join(DBOrder, DBOrder.id == DBOrderStatusHistory.order_id)
+        .filter(DBOrder.client_id == principal["id"])
+        .order_by(DBOrderStatusHistory.created_at.desc(), DBOrderStatusHistory.id.desc())
+        .limit(100)
+        .all()
+    )
+    return [
+        {
+            "id": event.id,
+            "order_id": order.id,
+            "old_status": event.old_status,
+            "status": event.new_status,
+            "note": event.note or "",
+            "created_at": event.created_at,
+            "vendor_name": order.vendor_name,
+            "total_price": order.total_price,
+        }
+        for event, order in rows
+    ]
+
+
+@router.get("/{order_id}/reviews", response_model=list[ProductReviewSchema])
+def get_order_reviews(
+    order_id: str,
+    principal: dict = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+):
+    order = db.query(DBOrder).filter(DBOrder.id == order_id).first()
+    if order is None:
+        raise HTTPException(status_code=404, detail="الطلب غير موجود.")
+    if principal["role"] != "ADMIN" and not (
+        principal["role"] in {"CLIENT", "CUSTOMER"} and principal["id"] == order.client_id
+    ):
+        raise HTTPException(status_code=403, detail="لا يمكنك الاطلاع على تقييمات هذا الطلب.")
+    return db.query(DBProductReview).filter(
+        DBProductReview.order_id == order_id
+    ).order_by(DBProductReview.created_at.asc()).all()
+
+
+@router.post("/{order_id}/reviews", response_model=ProductReviewSchema, status_code=201)
+def create_order_product_review(
+    order_id: str,
+    payload: ProductReviewCreateRequest,
+    principal: dict = Depends(require_customer),
+    db: Session = Depends(get_db),
+):
+    order = db.query(DBOrder).filter(
+        DBOrder.id == order_id,
+        DBOrder.client_id == principal["id"],
+    ).first()
+    if order is None:
+        raise HTTPException(status_code=404, detail="الطلب غير موجود لهذا الحساب.")
+    if order.status != DELIVERED:
+        raise HTTPException(status_code=409, detail="لا يمكن تقييم المنتج قبل تسليم الطلب فعلياً.")
+
+    try:
+        items = json.loads(order.items_json)
+    except (TypeError, json.JSONDecodeError):
+        raise HTTPException(status_code=409, detail="تعذر التحقق من المنتجات المسجلة في الطلب.")
+    if not isinstance(items, list):
+        raise HTTPException(status_code=409, detail="تفاصيل منتجات الطلب غير صالحة.")
+    product_ids = {
+        str(item.get("product_id"))
+        for item in items
+        if isinstance(item, dict) and item.get("product_id")
+    }
+    if payload.product_id not in product_ids:
+        raise HTTPException(status_code=403, detail="لا يمكنك تقييم منتج لم تشتره في هذا الطلب.")
+
+    product = db.query(DBProduct).filter(
+        DBProduct.id == payload.product_id,
+        DBProduct.vendor_id == order.vendor_id,
+    ).first()
+    if product is None:
+        raise HTTPException(status_code=409, detail="تعذر التحقق من المنتج المرتبط بهذا الطلب.")
+    if db.query(DBProductReview).filter(
+        DBProductReview.order_id == order_id,
+        DBProductReview.product_id == payload.product_id,
+    ).first():
+        raise HTTPException(status_code=409, detail="سبق أن قيّمت هذا المنتج في هذا الطلب.")
+
+    user = db.query(DBUser).filter(DBUser.id == principal["id"]).first()
+    if user is None or user.status != "active":
+        raise HTTPException(status_code=403, detail="الحساب غير نشط.")
+    # Public reviews show only a first-name display label, not email/phone/account ID.
+    reviewer_name = (user.name or "عميل").strip().split()[0] or "عميل"
+    review = DBProductReview(
+        id=f"review_{uuid.uuid4().hex}",
+        product_id=product.id,
+        order_id=order.id,
+        client_id=user.id,
+        reviewer_name=reviewer_name,
+        rating=payload.rating,
+        comment=payload.comment.strip(),
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+    db.add(review)
+    try:
+        db.commit()
+        db.refresh(review)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="سبق أن قيّمت هذا المنتج في هذا الطلب.")
+    return review
 
 
 @router.get("/{order_id}/history", response_model=list[OrderStatusHistorySchema])
