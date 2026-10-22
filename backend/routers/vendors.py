@@ -28,15 +28,36 @@ def get_public_vendors(db: Session = Depends(get_db)):
 @router.post("/register", response_model=VendorStoreSchema, status_code=201)
 def register_vendor(application: VendorApplicationRequest,
     principal: dict = Depends(require_customer), db: Session = Depends(get_db)):
-    if db.query(DBVendorStore).filter(DBVendorStore.owner_user_id == principal["id"]).first():
-        raise HTTPException(status_code=409, detail="لديك طلب متجر مسجل مسبقاً.")
     user = db.query(DBUser).filter(DBUser.id == principal["id"]).first()
     if user is None:
         raise HTTPException(status_code=401, detail="الحساب غير موجود.")
-    store = DBVendorStore(id=f"store_{uuid.uuid4().hex}",
-        store_name=application.store_name.strip(), owner_name=user.name,
-        phone=application.phone.strip(), description=application.description.strip(),
-        status="قيد المراجعة", admin_notes="", owner_user_id=str(user.id), delivery_fee=15.0)
+    store = db.query(DBVendorStore).filter(
+        DBVendorStore.owner_user_id == principal["id"]
+    ).first()
+    if store is not None:
+        if store.status != "مرفوض":
+            raise HTTPException(status_code=409, detail="لديك طلب متجر مسجل مسبقاً.")
+        # Resubmission reuses the same store identity and owner link after a rejection.
+        store.store_name = application.store_name.strip()
+        store.owner_name = user.name
+        store.phone = application.phone.strip()
+        store.description = application.description.strip()
+        store.status = "قيد المراجعة"
+        store.admin_notes = ""
+        db.commit()
+        db.refresh(store)
+        return store
+    store = DBVendorStore(
+        id=f"store_{uuid.uuid4().hex}",
+        store_name=application.store_name.strip(),
+        owner_name=user.name,
+        phone=application.phone.strip(),
+        description=application.description.strip(),
+        status="قيد المراجعة",
+        admin_notes="",
+        owner_user_id=str(user.id),
+        delivery_fee=15.0,
+    )
     db.add(store)
     try:
         db.commit()
