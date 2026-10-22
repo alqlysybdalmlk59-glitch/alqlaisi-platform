@@ -154,6 +154,23 @@ class SellerApi {
     });
   }
 
+  Future<void> updateProduct(
+    String token,
+    String productId,
+    String title,
+    String description,
+    String imageUrl,
+    String category,
+  ) async {
+    await request('/products/${Uri.encodeComponent(productId)}', method: 'PUT',
+      token: token, body: {
+        'title': title.trim(),
+        'description': description.trim(),
+        'image_url': imageUrl.trim(),
+        'category': category.trim().isEmpty ? 'عام' : category.trim(),
+      });
+  }
+
   Future<void> setAvailability(String token, String id, bool available) async {
     await request('/products/${Uri.encodeComponent(id)}/availability', method: 'PUT',
       token: token, body: {'is_available': available});
@@ -511,6 +528,89 @@ class _SellerHomePageState extends State<SellerHomePage> {
     title.dispose(); description.dispose(); image.dispose(); category.dispose();
   }
 
+  Future<void> _editProduct(Map<String, dynamic> product) async {
+    final key = GlobalKey<FormState>();
+    final title = TextEditingController(text: (product['title'] ?? '').toString());
+    final description = TextEditingController(text: (product['description'] ?? '').toString());
+    final image = TextEditingController(text: (product['image_url'] ?? '').toString());
+    final category = TextEditingController(text: (product['category'] ?? 'عام').toString());
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تعديل بيانات المنتج'),
+        content: SizedBox(
+          width: 440,
+          child: Form(
+            key: key,
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                TextFormField(
+                  controller: title,
+                  decoration: const InputDecoration(labelText: 'اسم المنتج'),
+                  validator: (value) => value == null || value.trim().length < 2
+                      ? 'أدخل اسم المنتج.'
+                      : null,
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: description,
+                  maxLines: 2,
+                  decoration: const InputDecoration(labelText: 'الوصف'),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: category,
+                  decoration: const InputDecoration(labelText: 'التصنيف'),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: image,
+                  decoration: const InputDecoration(labelText: 'رابط الصورة'),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'سيعود المنتج إلى المراجعة وسيتوقف عرضه حتى تعتمد الإدارة السعر والنشر مجدداً.',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ]),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, key.currentState?.validate() == true),
+            child: const Text('حفظ وإرسال للمراجعة'),
+          ),
+        ],
+      ),
+    );
+    if (accepted == true) {
+      try {
+        await widget.api.updateProduct(
+          widget.token,
+          product['id'].toString(),
+          title.text,
+          description.text,
+          image.text,
+          category.text,
+        );
+        _message('تم حفظ التعديلات وإرسال المنتج إلى مراجعة الإدارة.');
+        await _refresh();
+      } catch (error) {
+        _message(error is SellerApiException ? error.message : 'تعذر تعديل المنتج.');
+      }
+    }
+    title.dispose();
+    description.dispose();
+    image.dispose();
+    category.dispose();
+  }
+
   Future<void> _availability(Map<String, dynamic> product, bool value) async {
     try {
       await widget.api.setAvailability(widget.token, product['id'].toString(), value);
@@ -600,7 +700,21 @@ class _SellerHomePageState extends State<SellerHomePage> {
         final price = (product['price'] as num?)?.toString() ?? '0';
         final approved = status == 'منشور' && ((product['price'] as num?) ?? 0) > 0;
         final children = <Widget>[
-          Text((product['title'] ?? 'منتج').toString(), style: Theme.of(context).textTheme.titleMedium),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  (product['title'] ?? 'منتج').toString(),
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              IconButton(
+                tooltip: 'تعديل بيانات المنتج',
+                onPressed: () => _editProduct(product),
+                icon: const Icon(Icons.edit_outlined),
+              ),
+            ],
+          ),
           const SizedBox(height: 6),
           Text('السعر المعتمد: $price ريال'),
           Text('الحالة: $status'),

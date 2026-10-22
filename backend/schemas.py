@@ -34,6 +34,13 @@ class ProductCreateRequest(BaseModel):
     category: str = Field(default="عام", min_length=1, max_length=100)
     vendor_id: Optional[str] = None  # Admin-only; seller store is derived from account.
 
+class ProductUpdateRequest(BaseModel):
+    title: str = Field(min_length=2, max_length=180)
+    description: str = Field(default="", max_length=5000)
+    image_url: str = Field(default="", max_length=2048)
+    category: str = Field(default="عام", min_length=1, max_length=100)
+
+
 class ProductApprovalRequest(BaseModel):
     sale_price: float = Field(gt=0, le=100000000, allow_inf_nan=False)
     approved: bool = True

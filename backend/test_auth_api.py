@@ -310,6 +310,36 @@ class TestAuthAPI(unittest.TestCase):
             current = db.query(models.DBVendorStore).filter_by(id=store["id"]).first()
             self.assertEqual(current.owner_user_id, "u_777123486")
 
+    def test_seller_product_edits_force_admin_reapproval_and_ignore_forged_fields(self):
+        seller_token, _admin_token, store, product_id = self._approved_store_and_product("777123510")
+        response = self.client.put(
+            f"/api/products/{product_id}",
+            headers={"Authorization": f"Bearer {seller_token}"},
+            json={
+                "title": "دفتر بعد التعديل",
+                "description": "وصف محدث",
+                "image_url": "https://example.invalid/product.png",
+                "category": "قرطاسية",
+                "price": 1,
+                "vendor_id": "attacker-store",
+                "is_available": True,
+                "review_status": "منشور",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        item = response.json()
+        self.assertEqual(item["title"], "دفتر بعد التعديل")
+        self.assertEqual(item["vendor_id"], store["id"])
+        self.assertEqual(item["price"], 0)
+        self.assertEqual(item["review_status"], "قيد المراجعة")
+        self.assertFalse(item["is_available"])
+        with self.TestSession() as db:
+            saved = db.query(models.DBProduct).filter_by(id=product_id).first()
+            self.assertEqual(saved.vendor_id, store["id"])
+            self.assertEqual(saved.price, 0)
+            self.assertEqual(saved.review_status, "قيد المراجعة")
+            self.assertFalse(saved.is_available)
+
     def test_legacy_store_owner_link_requires_review_note_and_is_audited(self):
         _token, user_id = self._register("777123491")
         admin_token = self._admin_token()

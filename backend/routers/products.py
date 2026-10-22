@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from models import DBProduct, DBUser, DBVendorStore
-from schemas import ProductApprovalRequest, ProductAvailabilityRequest, ProductCreateRequest, ProductSchema
+from schemas import ProductApprovalRequest, ProductAvailabilityRequest, ProductCreateRequest, ProductUpdateRequest, ProductSchema
 from routers.dependencies import get_db, require_admin, require_seller_or_admin
 
 router = APIRouter(prefix="/api/products", tags=["products"])
@@ -71,6 +71,36 @@ def create_product(payload: ProductCreateRequest, principal: dict = Depends(requ
     db.commit()
     db.refresh(product)
     return product
+
+@router.put("/{product_id}", response_model=ProductSchema)
+def update_product(
+    product_id: str,
+    payload: ProductUpdateRequest,
+    principal: dict = Depends(require_seller_or_admin),
+    db: Session = Depends(get_db),
+):
+    product = db.query(DBProduct).filter(DBProduct.id == product_id).first()
+    if product is None:
+        raise HTTPException(status_code=404, detail="المنتج غير موجود.")
+    _require_store_access(product.vendor_id, principal)
+    store = db.query(DBVendorStore).filter(DBVendorStore.id == product.vendor_id).first()
+    if store is None or store.status != "مفعل":
+        raise HTTPException(status_code=409, detail="لا يمكن تعديل منتج متجر غير معتمد أو موقوف.")
+
+    # Client-supplied price, store ID, publish state, and availability do not exist in
+    # this request schema. Any content change forces a fresh administrative review.
+    product.title = payload.title.strip()
+    product.description = payload.description.strip()
+    product.image_url = payload.image_url.strip()
+    product.category = payload.category.strip()
+    product.price = 0.0
+    product.review_status = "قيد المراجعة"
+    product.is_available = False
+    product.admin_notes = ""
+    db.commit()
+    db.refresh(product)
+    return product
+
 
 @router.put("/{product_id}/availability")
 def set_product_availability(product_id: str, payload: ProductAvailabilityRequest | None = None,
