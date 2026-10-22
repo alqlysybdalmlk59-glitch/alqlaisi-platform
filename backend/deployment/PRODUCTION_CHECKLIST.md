@@ -16,6 +16,12 @@ Set these as secrets/environment variables in the hosting control plane. Never c
 
 Production startup fails closed when these core values are missing or unsafe. API docs are disabled in production. The ingress must terminate TLS, redirect HTTP to HTTPS, apply HSTS, and prevent direct public access to the container port. The app only trusts forwarded headers from configured proxy addresses.
 
+## Nginx TLS and rate-limiting template
+
+The repository includes `backend/deployment/nginx.conf.template`. Replace `api.example.com` with the real API hostname, install certificates, inspect the config with `nginx -t`, and reload Nginx only after that check passes. Start/publish the application so that port 8000 is reachable by Nginx through host loopback only (for Docker, map the port as `127.0.0.1:8000:8000`, not `0.0.0.0:8000:8000`). Set `FORWARDED_ALLOW_IPS=127.0.0.1` only when the local Nginx reverse proxy is the trusted immediate peer. If a managed hosting provider terminates TLS before the container, use that provider's exact trusted proxy configuration instead of copying the local-Nginx value.
+
+The template caps request sizes and timeouts, applies HSTS and security headers, and imposes conservative per-IP limits on sign-in/registration/Google OAuth (5 requests/minute with a burst of 10) and checkout (10/minute with a burst of 5). These are starting limits, not a substitute for monitoring, distributed abuse detection, or a load test; adapt them to your provider and real traffic.
+
 ## Release process
 
 1. Create a managed PostgreSQL database, enable TLS, and configure backups/point-in-time recovery.
@@ -41,7 +47,7 @@ The Android project currently has an example application ID in Gradle. Replace i
 
 ## Operational safeguards and known boundaries
 
-- Configure edge rate limits for `/auth/login`, `/auth/register`, `/auth/google`, `/checkout` and `/orders/checkout`; configure request/body size limits and alerting. Do not rely on in-process memory throttling for a multi-worker service.
+- Configure and test edge rate limits for `/auth/login`, `/auth/register`, `/auth/google`, `/checkout` and `/orders/checkout`; the included Nginx template provides a starting configuration. Configure monitoring/alerting and adapt limits to production traffic. Do not rely on in-process memory throttling for a multi-worker service.
 - Store logs without passwords, Google ID tokens, bearer tokens, or full payment/delivery details. Restrict log access.
 - Confirm the seller suspension workflow, order cancellation policy, internal delivery assignment, and retention policy before launch.
 - The AI insights route intentionally returns 501 until connected to real sales data. Forgot-password likewise remains disabled until a verified recovery channel is implemented.

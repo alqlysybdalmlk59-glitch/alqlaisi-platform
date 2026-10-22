@@ -32,7 +32,7 @@ A green CI run means the checks in that workflow passed; it is not proof that ev
 6. Commission percentage and settlement policy remain undecided. No real financial transfers are implemented.
 7. Customer profile, addresses, favourites, notifications, ratings and some listings must be audited individually for persistence. Some screens may currently render without being API-connected.
 8. SQLite is the default DB. Setting `DATABASE_URL` to PostgreSQL does not migrate SQLite data. Back up and test a data migration, validate row counts and owner mappings before cutover.
-9. Before production, set a strong JWT secret, explicit CORS origins, HTTPS, auth/checkout rate limiting, audit logging and backup/restore procedures.
+9. Before production, set a strong JWT secret, explicit CORS origins and allowed hosts, deploy behind HTTPS ingress/rate limiting (Nginx template added), keep port 8000 private, verify audit logs, and test backup/restore.
 10. Reconcile legacy store rows with null `owner_user_id` and resolve duplicated/inaccurate mappings through admin review; each manual link now requires a recorded verification note.
 11. `/api/ai/sales-insights` is still a placeholder and is not connected to actual analytics.
 12. Current CI compiles Python, runs security/auth and production-config tests, analyzes the customer Flutter app and seller app, and syntax-checks the admin dashboard JavaScript; it does not replace device/browser end-to-end tests or deployment verification.
@@ -42,7 +42,7 @@ A green CI run means the checks in that workflow passed; it is not proof that ev
 - [ ] Latest CI after each new change is green.
 - [ ] Google tests cover verified-subject reuse, explicit linking after password authentication, conflicting identities, unverified email, invalid token, duplicate email, and admin-role rejection.
 - [ ] Production settings fail closed on SQLite, missing OAuth configuration, wildcard CORS, or wildcard hosts.
-- [ ] Seller ownership and server-calculated checkout tests pass.
+- [ ] Seller ownership mismatch, server-calculated checkout, and store-owner audit lifecycle tests pass.
 - [ ] Customer checkout passes static analysis and a manual test against a running API.
 - [ ] Dedicated seller app and admin dashboard pass their own checks.
 - [ ] Google OAuth tested with configured credentials on a real device.

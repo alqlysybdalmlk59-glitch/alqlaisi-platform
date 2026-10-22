@@ -226,6 +226,35 @@ class TestAuthAPI(unittest.TestCase):
             headers={"Authorization": f"Bearer {seller_a}"})
         self.assertEqual(response.status_code, 403, response.text)
 
+    def test_seller_access_requires_current_two_way_store_ownership(self):
+        seller_token, _admin_token, store, _product_id = self._approved_store_and_product("777123494")
+        with self.TestSession() as db:
+            owner = db.query(models.DBUser).filter_by(id="u_777123494").first()
+            owner.store_id = "forged-or-stale-store-id"
+            db.commit()
+
+        products = self.client.get(
+            f"/api/products/vendor/{store['id']}",
+            headers={"Authorization": f"Bearer {seller_token}"},
+        )
+        self.assertEqual(products.status_code, 403, products.text)
+
+        public_stores = self.client.get("/api/vendors/public")
+        self.assertNotIn(store["id"], [row["id"] for row in public_stores.json()])
+
+        checkout_buyer, _ = self._register("777123495")
+        checkout = self.client.post(
+            "/api/checkout",
+            headers={"Authorization": f"Bearer {checkout_buyer}"},
+            json={
+                "recipient_name": "مشتري الاختبار",
+                "phone": "777000123",
+                "delivery_address": "صنعاء، الحي، الشارع",
+                "items": [{"product_id": _product_id, "quantity": 1}],
+            },
+        )
+        self.assertEqual(checkout.status_code, 409, checkout.text)
+
     def test_admin_cannot_transfer_store_to_another_account_through_owner_link(self):
         _seller_token, admin_token, store, _product_id = self._approved_store_and_product("777123486")
         _other_token, other_user_id = self._register("777123487")
