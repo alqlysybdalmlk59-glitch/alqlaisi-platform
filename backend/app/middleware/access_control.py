@@ -153,7 +153,7 @@ class AccessControlMiddleware(BaseHTTPMiddleware):
         user_id = payload.get("sub")
 
         # 3. Check Account Status (Suspend/Deactivate)
-        if user_status == UserStatus.SUSPENDED:
+        if user_status == UserStatus.SUSPENDED.value:
             logger.warning(f"[Security Audit] Suspended user {user_id} attempted access to {path}")
             return create_security_error(
                 status_code=403,
@@ -167,7 +167,7 @@ class AccessControlMiddleware(BaseHTTPMiddleware):
 
         # Rule A: Admin Area Protection
         if any(path.startswith(prefix) for prefix in self.ADMIN_PATH_PREFIXES):
-            if user_role != UserRole.ADMIN:
+            if user_role != UserRole.ADMIN.value:
                 logger.warning(
                     f"[Security Violation] Unauthorized access attempt to ADMIN route {path} "
                     f"by User {user_id} with role '{user_role}' from IP {client_ip}"
@@ -182,7 +182,7 @@ class AccessControlMiddleware(BaseHTTPMiddleware):
 
         # Rule B: Seller Area Protection
         if any(path.startswith(prefix) for prefix in self.SELLER_PATH_PREFIXES):
-            if user_role not in [UserRole.SELLER, UserRole.ADMIN]:
+            if user_role not in [UserRole.SELLER.value, UserRole.ADMIN.value]:
                 logger.warning(
                     f"[Security Violation] Customer {user_id} attempted to access SELLER route {path}"
                 )
@@ -261,10 +261,10 @@ def verify_seller_store_ownership(store_id: int, current_user: dict):
     role = current_user.get("role")
     user_store_id = current_user.get("store_id")
 
-    if role == UserRole.ADMIN:
+    if role == UserRole.ADMIN.value:
         return True
 
-    if role != UserRole.SELLER or user_store_id != store_id:
+    if role != UserRole.SELLER.value or user_store_id != store_id:
         logger.warning(
             f"[Tenant Violation] Seller User {current_user.get('sub')} attempted to manipulate Store {store_id}"
         )
@@ -289,10 +289,10 @@ def verify_order_access(order_customer_id: int, order_store_id: int, current_use
     if role == UserRole.ADMIN:
         return True
 
-    if role == UserRole.CUSTOMER and user_id == order_customer_id:
+    if role == UserRole.CUSTOMER.value and user_id == order_customer_id:
         return True
 
-    if role == UserRole.SELLER and user_store_id == order_store_id:
+    if role == UserRole.SELLER.value and user_store_id == order_store_id:
         return True
 
     raise HTTPException(
