@@ -48,6 +48,7 @@ class TestAuthAPI(unittest.TestCase):
         with self.TestSession() as db:
             db.query(models.DBSupportTicket).delete()
             db.query(models.DBVendorOwnershipHistory).delete()
+            db.query(models.DBProductReview).delete()
             db.query(models.DBOrderStatusHistory).delete()
             db.query(models.DBOrder).delete()
             db.query(models.DBProduct).delete()
@@ -209,6 +210,54 @@ class TestAuthAPI(unittest.TestCase):
             headers={"Authorization": f"Bearer {other_token}"},
         )
         self.assertEqual(forbidden.status_code, 403)
+
+        notifications = self.client.get(
+            "/api/orders/notifications/mine",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+        )
+        self.assertEqual(notifications.status_code, 200, notifications.text)
+        self.assertEqual(len(notifications.json()), 2)
+        self.assertEqual(notifications.json()[0]["status"], "قيد التجهيز")
+        self.assertEqual(notifications.json()[1]["status"], "بانتظار القبول")
+
+        before_delivery = self.client.post(
+            f"/api/orders/{order['id']}/reviews",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+            json={"product_id": product_id, "rating": 5, "comment": "تجربة"},
+        )
+        self.assertEqual(before_delivery.status_code, 409, before_delivery.text)
+
+        delivered = self.client.put(
+            f"/api/orders/{order['id']}/status?status=تم التسليم",
+            headers={"Authorization": f"Bearer {_admin}"},
+        )
+        self.assertEqual(delivered.status_code, 200, delivered.text)
+
+        review = self.client.post(
+            f"/api/orders/{order['id']}/reviews",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+            json={"product_id": product_id, "rating": 5, "comment": "منتج جيد"},
+        )
+        self.assertEqual(review.status_code, 201, review.text)
+        self.assertEqual(review.json()["rating"], 5)
+        public_reviews = self.client.get(f"/api/products/{product_id}/reviews")
+        self.assertEqual(public_reviews.status_code, 200, public_reviews.text)
+        self.assertEqual(len(public_reviews.json()), 1)
+        self.assertEqual(public_reviews.json()[0]["reviewer_name"], "مستخدم")
+
+        duplicate = self.client.post(
+            f"/api/orders/{order['id']}/reviews",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+            json={"product_id": product_id, "rating": 4, "comment": "مكرر"},
+        )
+        self.assertEqual(duplicate.status_code, 409, duplicate.text)
+
+        other_client = self.client.post(
+            f"/api/orders/{order['id']}/reviews",
+            headers={"Authorization": f"Bearer {other_token}"},
+            json={"product_id": product_id, "rating": 5, "comment": "غير مصرح"},
+        )
+        self.assertIn(other_client.status_code, {403, 404})
 
     def test_seller_cannot_access_another_store_products(self):
         seller_a, _admin, _store_a, _product_a = self._approved_store_and_product("777123472")
