@@ -88,16 +88,3 @@ class _CustomerShellState extends State<CustomerShell> {
     );
   }
 }
-
-class _AccountPlaceholder extends StatelessWidget {
-  const _AccountPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(
-        child: Text('صفحة الحساب قيد التجهيز'),
-      ),
-    );
-  }
-}
