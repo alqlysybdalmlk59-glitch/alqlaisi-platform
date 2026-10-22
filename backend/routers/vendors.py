@@ -2,22 +2,20 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from models import DBUser, DBVendorStore
-from schemas import DeliveryFeeRequest, VendorApplicationRequest, VendorOwnerLinkRequest, VendorStoreSchema
+from schemas import DeliveryFeeRequest, VendorApplicationRequest, VendorOwnerLinkRequest, VendorStoreSchema, AdminVendorStoreSchema
 from routers.dependencies import get_db, get_current_principal, require_admin, require_customer
 
 router = APIRouter(prefix="/api/vendors", tags=["vendors"])
 
-@router.get("/", response_model=list[VendorStoreSchema])
+@router.get("/", response_model=list[AdminVendorStoreSchema])
 def get_all_vendors(_principal: dict = Depends(require_admin), db: Session = Depends(get_db)):
     return db.query(DBVendorStore).order_by(DBVendorStore.store_name.asc()).all()
 
 @router.get("/mine", response_model=VendorStoreSchema | None)
 def get_my_vendor_store(principal: dict = Depends(get_current_principal),
     db: Session = Depends(get_db)):
-    store = db.query(DBVendorStore).filter(DBVendorStore.owner_user_id == principal["id"]).first()
-    if store is None and principal.get("store_id"):
-        store = db.query(DBVendorStore).filter(DBVendorStore.id == principal["store_id"]).first()
-    return store
+    # Only the owner foreign key is authoritative; users.store_id alone cannot grant access.
+    return db.query(DBVendorStore).filter(DBVendorStore.owner_user_id == principal["id"]).first()
 
 
 @router.get("/public", response_model=list[VendorStoreSchema])
@@ -79,6 +77,8 @@ def approve_vendor(vendor_id: str, _principal: dict = Depends(require_admin), db
         raise HTTPException(status_code=409, detail="حساب مالك المتجر غير موجود.")
     if owner.status != "active":
         raise HTTPException(status_code=409, detail="لا يمكن اعتماد متجر حسابه غير نشط.")
+    if owner.role.upper() not in {"CLIENT", "CUSTOMER", "VENDOR", "SELLER"}:
+        raise HTTPException(status_code=409, detail="لا يمكن إسناد حساب إداري كمالك متجر.")
     if owner.store_id and owner.store_id != store.id:
         raise HTTPException(status_code=409, detail="الحساب مرتبط بمتجر آخر بالفعل.")
     other = db.query(DBVendorStore).filter(
@@ -99,6 +99,10 @@ def link_vendor_owner(vendor_id: str, payload: VendorOwnerLinkRequest,
     owner = db.query(DBUser).filter(DBUser.id == payload.user_id).first()
     if not owner:
         raise HTTPException(status_code=404, detail="حساب المستخدم غير موجود")
+    if store.owner_user_id and store.owner_user_id != owner.id:
+        raise HTTPException(status_code=409, detail="المتجر مربوط بحساب آخر بالفعل؛ يلزم إجراء نقل ملكية منفصل ومراجع.")
+    if owner.role.upper() not in {"CLIENT", "CUSTOMER", "VENDOR", "SELLER"}:
+        raise HTTPException(status_code=409, detail="لا يمكن ربط حساب إداري كمالك متجر.")
     if owner.status != "active":
         raise HTTPException(status_code=409, detail="لا يمكن ربط حساب غير نشط.")
     other = db.query(DBVendorStore).filter(

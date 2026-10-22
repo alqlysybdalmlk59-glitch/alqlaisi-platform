@@ -1,7 +1,8 @@
+import math
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from models import DBProduct, DBVendorStore
+from models import DBProduct, DBUser, DBVendorStore
 from schemas import ProductApprovalRequest, ProductAvailabilityRequest, ProductCreateRequest, ProductSchema
 from routers.dependencies import get_db, require_admin, require_seller_or_admin
 
@@ -15,8 +16,22 @@ def _require_store_access(store_id: str, principal: dict) -> None:
 
 @router.get("/", response_model=list[ProductSchema])
 def get_published_products(db: Session = Depends(get_db)):
-    return db.query(DBProduct).filter(DBProduct.review_status == "منشور",
-        DBProduct.is_available.is_(True), DBProduct.price > 0).all()
+    # Products from rejected stores or suspended owners must not stay discoverable.
+    return (
+        db.query(DBProduct)
+        .join(DBVendorStore, DBProduct.vendor_id == DBVendorStore.id)
+        .join(DBUser, DBVendorStore.owner_user_id == DBUser.id)
+        .filter(
+            DBProduct.review_status == "منشور",
+            DBProduct.is_available.is_(True),
+            DBProduct.price > 0,
+            DBVendorStore.status == "مفعل",
+            DBUser.status == "active",
+            DBUser.role.in_(["VENDOR", "SELLER"]),
+            DBUser.store_id == DBVendorStore.id,
+        )
+        .all()
+    )
 
 @router.get("/admin/review", response_model=list[ProductSchema])
 def get_products_for_admin_review(status: str = "قيد المراجعة",
@@ -64,7 +79,7 @@ def set_product_availability(product_id: str, payload: ProductAvailabilityReques
     if not product:
         raise HTTPException(status_code=404, detail="المنتج غير موجود")
     _require_store_access(product.vendor_id, principal)
-    if product.review_status != "منشور" or product.price <= 0:
+    if product.review_status != "منشور" or not math.isfinite(float(product.price)) or product.price <= 0:
         raise HTTPException(status_code=409, detail="لا يمكن تفعيل منتج قبل اعتماد الإدارة وتحديد سعره.")
     product.is_available = payload.is_available if payload is not None else not product.is_available
     db.commit()
