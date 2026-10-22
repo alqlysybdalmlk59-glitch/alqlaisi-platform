@@ -78,6 +78,11 @@ def create_orders(payload: CheckoutRequest, principal: dict, db: Session) -> lis
 def checkout(payload: CheckoutRequest, principal: dict = Depends(require_customer), db: Session = Depends(get_db)):
     return create_orders(payload, principal, db)
 
+@router.get("/", response_model=list[OrderSchema])
+def get_all_orders(_principal: dict = Depends(require_admin), db: Session = Depends(get_db)):
+    return db.query(DBOrder).order_by(DBOrder.date.desc()).all()
+
+
 @router.get("/client/{client_id}", response_model=list[OrderSchema])
 def get_client_orders(client_id: str, principal: dict = Depends(get_current_principal), db: Session = Depends(get_db)):
     if principal["role"] != "ADMIN" and principal["id"] != client_id:

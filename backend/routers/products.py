@@ -18,6 +18,15 @@ def get_published_products(db: Session = Depends(get_db)):
     return db.query(DBProduct).filter(DBProduct.review_status == "منشور",
         DBProduct.is_available.is_(True), DBProduct.price > 0).all()
 
+@router.get("/admin/review", response_model=list[ProductSchema])
+def get_products_for_admin_review(status: str = "قيد المراجعة",
+    _principal: dict = Depends(require_admin), db: Session = Depends(get_db)):
+    query = db.query(DBProduct)
+    if status != "all":
+        query = query.filter(DBProduct.review_status == status)
+    return query.order_by(DBProduct.title.asc()).all()
+
+
 @router.get("/vendor/{vendor_id}", response_model=list[ProductSchema])
 def get_vendor_products(vendor_id: str, principal: dict = Depends(require_seller_or_admin),
     db: Session = Depends(get_db)):

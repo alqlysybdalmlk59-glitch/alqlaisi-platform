@@ -11,6 +11,15 @@ router = APIRouter(prefix="/api/vendors", tags=["vendors"])
 def get_all_vendors(_principal: dict = Depends(require_admin), db: Session = Depends(get_db)):
     return db.query(DBVendorStore).order_by(DBVendorStore.store_name.asc()).all()
 
+@router.get("/mine", response_model=VendorStoreSchema | None)
+def get_my_vendor_store(principal: dict = Depends(__import__("routers.dependencies", fromlist=["get_current_principal"]).get_current_principal),
+    db: Session = Depends(get_db)):
+    store = db.query(DBVendorStore).filter(DBVendorStore.owner_user_id == principal["id"]).first()
+    if store is None and principal.get("store_id"):
+        store = db.query(DBVendorStore).filter(DBVendorStore.id == principal["store_id"]).first()
+    return store
+
+
 @router.get("/public", response_model=list[VendorStoreSchema])
 def get_public_vendors(db: Session = Depends(get_db)):
     return db.query(DBVendorStore).filter(DBVendorStore.status == "مفعل").order_by(
