@@ -23,7 +23,7 @@ from app.core.security import (
     decode_access_token,
 )
 
-router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 def get_db():
