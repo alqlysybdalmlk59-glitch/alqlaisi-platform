@@ -9,7 +9,7 @@ import re
 from datetime import timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -135,11 +135,31 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/me")
-def current_user(authorization: str | None = None, db: Session = Depends(get_db)):
-    # FastAPI Header alias is set explicitly below by the helper dependency.
-    from fastapi import Header
+def current_user(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="رمز الدخول مفقود أو غير صحيح.")
 
-    raise HTTPException(status_code=401, detail="استخدم Authorization: Bearer <token>.")
+    token = authorization.split(" ", 1)[1].strip()
+    try:
+        payload = decode_access_token(token)
+    except (ValueError, RuntimeError):
+        raise HTTPException(status_code=401, detail="رمز الدخول غير صالح أو منتهي الصلاحية.")
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="رمز الدخول لا يحتوي على معرّف المستخدم.")
+
+    user = db.query(models.DBUser).filter(models.DBUser.id == str(user_id)).first()
+    if user is None:
+        raise HTTPException(status_code=401, detail="الحساب المرتبط بالرمز غير موجود.")
+
+    account_status = getattr(user, "status", "active") or "active"
+    if account_status != "active":
+        raise HTTPException(status_code=403, detail="الحساب غير نشط أو قيد المراجعة.")
+    return _public_user(user)
 
 
 @router.post("/logout")
