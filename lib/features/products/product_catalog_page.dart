@@ -6,7 +6,6 @@ import '../../core/network/api_exception.dart';
 import '../../core/theme/app_theme.dart';
 import '../stores/stores_page.dart';
 import '../favorites/favorites_page.dart';
-import '../favorites/favorites_store.dart';
 import '../notifications/notifications_page.dart';
 import 'models/product.dart';
 import 'product_details_page.dart';
@@ -30,7 +29,7 @@ class _ProductCatalogPageState extends State<ProductCatalogPage> {
   bool _loading = true;
   String? _error;
 
-  @override void initState() { super.initState(); _api=ApiClient(); _service=ProductService(_api); FavoritesStore.instance.load(); _load(); }
+  @override void initState() { super.initState(); _api=ApiClient(); _service=ProductService(_api); _load(); }
   @override void dispose() { _api.close(); _search.dispose(); super.dispose(); }
 
   Future<void> _load() async {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/network/api_client.dart';
+import '../../core/cart/cart_scope.dart';
 import '../../core/network/api_endpoints.dart';
 import '../../core/theme/app_theme.dart';
 import '../shell/customer_shell.dart';
@@ -80,6 +81,7 @@ class _AuthGateState extends State<AuthGate> {
 
 
   Future<void> _logout() async {
+    CartScope.of(context).clear();
     await FavoritesStore.instance.clearActiveAccount();
     await _sessionController.logout();
     if (mounted) setState(() { _showRegister = false; });

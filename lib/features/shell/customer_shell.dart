@@ -43,6 +43,8 @@ class _CustomerShellState extends State<CustomerShell> {
   Future<void> _selectAccountFavorites() async {
     try {
       await FavoritesStore.instance.selectAccount(widget.userId);
+    } catch (_) {
+      // The storefront remains usable if device-local favourites storage is unavailable.
     } finally {
       if (mounted) setState(() => _favoritesReady = true);
     }
