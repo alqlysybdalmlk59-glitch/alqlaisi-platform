@@ -164,7 +164,7 @@ class _OrdersPageState extends State<OrdersPage> {
                 const Text('التقييم متاح بعد استلام الطلب وتسجيله كـ «تم التسليم».'),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
-                  value: rating,
+                  initialValue: rating,
                   decoration: const InputDecoration(labelText: 'التقييم'),
                   items: List.generate(5, (index) {
                     final value = 5 - index;
