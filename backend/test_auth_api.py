@@ -47,6 +47,7 @@ class TestAuthAPI(unittest.TestCase):
     def setUp(self):
         with self.TestSession() as db:
             db.query(models.DBSupportTicket).delete()
+            db.query(models.DBOrderStatusHistory).delete()
             db.query(models.DBOrder).delete()
             db.query(models.DBProduct).delete()
             db.query(models.DBVendorStore).delete()
