@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.main import app
 import models
-from routers import auth
+from routers import auth, dependencies
 
 
 class TestAuthAPI(unittest.TestCase):
@@ -33,6 +33,7 @@ class TestAuthAPI(unittest.TestCase):
                 db.close()
 
         app.dependency_overrides[auth.get_db] = override_get_db
+        app.dependency_overrides[dependencies.get_db] = override_get_db
         cls.client = TestClient(app)
 
     @classmethod
@@ -67,6 +68,22 @@ class TestAuthAPI(unittest.TestCase):
         me = self.client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
         self.assertEqual(me.status_code, 200, me.text)
         self.assertEqual(me.json()["phone"], "777123456")
+
+    def test_business_routes_require_authentication(self):
+        self.assertEqual(self.client.get("/api/vendors/").status_code, 401)
+        self.assertEqual(self.client.post("/api/orders/checkout", json=[]).status_code, 401)
+        self.assertEqual(self.client.get("/api/support/").status_code, 401)
+
+    def test_customer_cannot_access_admin_vendor_list(self):
+        response = self.client.post("/auth/register", json={
+            "full_name": "عميل تجريبي",
+            "phone": "777123460",
+            "password": "SecurePass123",
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        token = response.json()["access_token"]
+        result = self.client.get("/api/vendors/", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(result.status_code, 403, result.text)
 
     def test_google_login_fails_closed_when_not_configured(self):
         import os
