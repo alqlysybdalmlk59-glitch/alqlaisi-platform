@@ -29,6 +29,12 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - name: Install backend dependencies
         run: python -m pip install -r backend/requirements.txt
+      - name: Compile backend Python files
+        run: python -m compileall -q backend
+      - name: Smoke-test unified FastAPI entry point
+        env:
+          JWT_SECRET_KEY: test-only-secret-not-for-production-0123456789
+        run: python -c "from backend.app.main import app; assert any(route.path == '/api/auth/login' for route in app.routes); assert any(route.path == '/api/v1/health' for route in app.routes); print('Unified FastAPI entry point loaded')"
       - name: Run security unit tests
         env:
           JWT_SECRET_KEY: test-only-secret-not-for-production-0123456789
