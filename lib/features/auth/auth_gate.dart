@@ -49,8 +49,15 @@ class _AuthGateState extends State<AuthGate> {
   Future<void> _restoreSession() async {
     try {
       await _sessionController.restoreSession();
+      final user = _sessionController.user;
+      if (user != null) {
+        await FavoritesStore.instance.selectAccount(user.id);
+      } else {
+        await FavoritesStore.instance.clearActiveAccount();
+      }
     } catch (_) {
-      // Ignore session restore error on start
+      // A storage failure must not restore a stale account's favourites.
+      await FavoritesStore.instance.clearActiveAccount();
     } finally {
       if (mounted) {
         setState(() => _starting = false);
@@ -61,6 +68,11 @@ class _AuthGateState extends State<AuthGate> {
   Future<void> _onAuthenticated(AuthSession session) async {
     try {
       await _sessionController.acceptSession(session);
+      try {
+        await FavoritesStore.instance.selectAccount(session.user.id);
+      } catch (_) {
+        // The session is valid even when device storage for favourites is unavailable.
+      }
 
       if (!mounted) return;
 
