@@ -13,6 +13,7 @@ class TestProductionRuntimeConfig(unittest.TestCase):
             "DATABASE_URL": "postgresql+psycopg://alqlaisi:password@db.example.net:5432/alqlaisi?sslmode=require",
             "JWT_SECRET_KEY": "a" * 64,
             "GOOGLE_CLIENT_ID": "test-web-oauth-client-id.apps.googleusercontent.com",
+            "ALLOWED_HOSTS": "api.example.net",
         }
 
     def test_valid_production_settings_are_accepted(self):
@@ -47,6 +48,15 @@ class TestProductionRuntimeConfig(unittest.TestCase):
              patch.object(runtime_config, "CORS_ORIGINS", ["https://admin.example.net"]), \
              patch.object(runtime_config, "ALLOWED_HOSTS", ["api.example.net"]):
             with self.assertRaisesRegex(RuntimeError, "GOOGLE_CLIENT_ID"):
+                runtime_config.validate_production_configuration()
+
+    def test_production_rejects_missing_explicit_allowed_hosts(self):
+        env = {**self.good_env, "ALLOWED_HOSTS": ""}
+        with patch.dict(os.environ, env, clear=False), \\
+             patch.object(runtime_config, "IS_PRODUCTION", True), \\
+             patch.object(runtime_config, "CORS_ORIGINS", ["https://admin.example.net"]), \\
+             patch.object(runtime_config, "ALLOWED_HOSTS", ["localhost", "127.0.0.1"]):
+            with self.assertRaisesRegex(RuntimeError, "ALLOWED_HOSTS.*explicitly"):
                 runtime_config.validate_production_configuration()
 
     def test_production_rejects_wildcard_cors_and_hosts(self):

@@ -32,9 +32,13 @@ def validate_production_configuration() -> None:
         parsed = urlsplit(origin)
         if parsed.scheme != "https" or not parsed.netloc or parsed.path not in ("", "/") or parsed.query or parsed.fragment:
             raise RuntimeError(f"Invalid production CORS origin {origin!r}; use HTTPS origins only.")
-    if not ALLOWED_HOSTS or "*" in ALLOWED_HOSTS:
+    raw_allowed_hosts = os.getenv("ALLOWED_HOSTS", "").strip()
+    if not raw_allowed_hosts:
+        raise RuntimeError("Production requires ALLOWED_HOSTS to be explicitly configured; local development defaults are not accepted.")
+    configured_hosts = [value.strip() for value in raw_allowed_hosts.split(",") if value.strip()]
+    if not configured_hosts or "*" in configured_hosts:
         raise RuntimeError("Production requires explicit ALLOWED_HOSTS; wildcard hosts are forbidden.")
-    if any("://" in host or "/" in host for host in ALLOWED_HOSTS):
+    if any("://" in host or "/" in host for host in configured_hosts):
         raise RuntimeError("ALLOWED_HOSTS must contain hostnames only, not URLs.")
 
 

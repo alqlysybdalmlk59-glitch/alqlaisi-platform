@@ -16,7 +16,7 @@ A green CI run means the checks in that workflow passed; it is not proof that ev
 - Checkout: server derives price, product availability/publication, store, and delivery fee from database data; rejects unsupported payment methods, ignores supplied totals, and splits a mixed cart into per-store orders.
 - Order identity/state: user identity comes from the token/database, seller order updates are store-scoped and constrained to allowed transitions. Every creation/status change is recorded in an order-status audit log, and only the customer, owning seller, or admin can read that log.
 - Support ticket identity: creator fields are server-supplied; users can query their own tickets.
-- Production startup: PostgreSQL, long JWT secret, Google server client ID, exact HTTPS CORS origins, explicit allowed hosts, required migrated tables/columns, and security headers are enforced as deployment gates.
+- Production startup: PostgreSQL, TLS, long JWT secret, Google server client ID, exact HTTPS CORS origins, explicitly configured allowed hosts (no development defaults), required migrated tables/columns, and security headers are enforced as deployment gates.
 - Administration: the web dashboard can link a store to an account and activate/suspend users through protected routes; owner reassignment is rejected by default.
 - Customer checkout: the confirmation button now submits to the backend, handles failures and displays server-calculated order totals.
 - API compatibility: `/api/auth/*` and `/api/checkout` match the customer client's `/api` base URL.
@@ -41,7 +41,7 @@ A green CI run means the checks in that workflow passed; it is not proof that ev
 
 - [ ] Latest CI after each new change is green.
 - [ ] Google tests cover verified-subject reuse, explicit linking after password authentication, conflicting identities, unverified email, invalid token, duplicate email, and admin-role rejection.
-- [ ] Production settings fail closed on SQLite, missing OAuth configuration, wildcard CORS, or wildcard hosts.
+- [ ] Production settings fail closed on SQLite, missing OAuth configuration, missing explicit ALLOWED_HOSTS, wildcard CORS, or wildcard hosts.
 - [ ] Seller ownership mismatch, server-calculated checkout, and store-owner audit lifecycle tests pass.
 - [ ] Customer checkout passes static analysis and a manual test against a running API.
 - [ ] Dedicated seller app and admin dashboard pass their own checks.
