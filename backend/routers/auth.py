@@ -51,6 +51,11 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=100)
 
 
+class UpdateProfileRequest(BaseModel):
+    full_name: str = Field(min_length=2, max_length=100)
+    phone: str = Field(min_length=8, max_length=20)
+
+
 class GoogleLoginRequest(BaseModel):
     id_token: str = Field(min_length=20, max_length=8192)
 
@@ -349,6 +354,50 @@ def current_user(
     account_status = getattr(user, "status", "active") or "active"
     if account_status != "active":
         raise HTTPException(status_code=403, detail="الحساب غير نشط أو قيد المراجعة.")
+    return _public_user(user)
+
+
+@router.put("/me/profile")
+def update_my_profile(
+    payload: UpdateProfileRequest,
+    principal: dict = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+):
+    if principal["role"] not in {"CLIENT", "CUSTOMER"}:
+        raise HTTPException(
+            status_code=403,
+            detail="تعديل الملف الشخصي من هذا المسار متاح لحسابات العملاء فقط.",
+        )
+    user = db.query(models.DBUser).filter(models.DBUser.id == principal["id"]).first()
+    if user is None:
+        raise HTTPException(status_code=401, detail="الحساب غير موجود.")
+    if (getattr(user, "status", "active") or "active") != "active":
+        raise HTTPException(status_code=403, detail="الحساب غير نشط أو قيد المراجعة.")
+
+    phone = _normalise_phone(payload.phone)
+    if not re.fullmatch(r"\+?[0-9]{8,19}", phone):
+        raise HTTPException(
+            status_code=422,
+            detail="رقم الهاتف يجب أن يحتوي على 8 إلى 19 رقماً، مع + اختياري في البداية.",
+        )
+    duplicate = db.query(models.DBUser).filter(
+        models.DBUser.phone == phone,
+        models.DBUser.id != user.id,
+    ).first()
+    if duplicate is not None:
+        raise HTTPException(status_code=409, detail="رقم الهاتف مرتبط بحساب آخر.")
+
+    user.name = payload.full_name.strip()
+    user.phone = phone
+    try:
+        db.commit()
+        db.refresh(user)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="تعذر حفظ بيانات الملف الشخصي بسبب تعارض؛ لم يتم تغيير الحساب.",
+        )
     return _public_user(user)
 
 
