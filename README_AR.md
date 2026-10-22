@@ -20,10 +20,21 @@ python -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
 
 ```powershell
 flutter pub get
-flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000/api
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000/api --dart-define=GOOGLE_SERVER_CLIENT_ID=YOUR_WEB_CLIENT_ID
 ```
 
-العنوان `10.0.2.2` مخصص لمحاكي Android. عند تشغيل عميل Windows desktop استخدم `API_BASE_URL=http://127.0.0.1:8000/api`.
+استبدل `YOUR_WEB_CLIENT_ID` بمعرّف OAuth من نوع Web الحقيقي في Google Cloud؛ لا تترك النص التجريبي كما هو. العنوان `10.0.2.2` مخصص لمحاكي Android. عند تشغيل عميل Windows desktop استخدم `API_BASE_URL=http://127.0.0.1:8000/api` مع تعريف Google نفسه.
+
+#### ضبط التشغيل من Android Studio
+
+1. افتح `Run → Edit Configurations` واختر إعداد Flutter الذي يشغّل `lib/main.dart`.
+2. في `Additional run args` ضع السطر التالي بعد استبدال معرّف Google بمعرّف Web الحقيقي:
+
+```text
+--dart-define=API_BASE_URL=http://10.0.2.2:8000/api --dart-define=GOOGLE_SERVER_CLIENT_ID=YOUR_WEB_CLIENT_ID
+```
+
+3. على الخادم ضع `GOOGLE_CLIENT_ID` بالقيمة نفسها. يجب أن يشير العميل والخادم إلى OAuth Web client نفسه. لا تضع أسرار الاستضافة أو كلمات المرور في هذه الوسائط أو في GitHub.
 
 ### تشغيل تطبيق البائع
 
