@@ -111,6 +111,9 @@ class SellerApi {
       method: 'PUT', token: token);
   }
 
+  Future<List<Map<String, dynamic>>> orderHistory(String token, String id) async =>
+      _asList(await request('/orders/${Uri.encodeComponent(id)}/history', token: token));
+
   static List<Map<String, dynamic>> _asList(dynamic value) {
     if (value is! List) throw const SellerApiException('قائمة البيانات غير صالحة.');
     return value.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).toList();

@@ -1,49 +1,234 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
+
 import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/theme/app_theme.dart';
 
-class OrdersPage extends StatefulWidget{
-  const OrdersPage({super.key,required this.token});
+class OrdersPage extends StatefulWidget {
+  const OrdersPage({super.key, required this.token});
   final String token;
-  @override State<OrdersPage> createState()=>_OrdersPageState();
+
+  @override
+  State<OrdersPage> createState() => _OrdersPageState();
 }
-class _OrdersPageState extends State<OrdersPage>{
-  late final ApiClient _api;bool _loading=true;String? _error;List<Map<String,dynamic>> _orders=[];
-  @override void initState(){super.initState();_api=ApiClient();_load();}
-  @override void didUpdateWidget(covariant OrdersPage oldWidget){super.didUpdateWidget(oldWidget);if(oldWidget.token!=widget.token)_load();}
-  @override void dispose(){_api.close();super.dispose();}
-  Future<void> _load()async{
-    setState(()=>_loading=true);
-    try{
-      final me=await _api.get('/auth/me',token:widget.token);
-      if(me is! Map||(me['id']??'').toString().isEmpty)throw const FormatException();
-      final result=await _api.get('/orders/client/${Uri.encodeComponent(me['id'].toString())}',token:widget.token);
-      if(result is! List)throw const FormatException();
-      if(mounted)setState(()=>_orders=result.whereType<Map>().map((e)=>Map<String,dynamic>.from(e)).toList());
-    }on ApiException catch(e){if(mounted)setState(()=>_error=e.message);}
-    catch(_){if(mounted)setState(()=>_error='تعذر تحميل الطلبات.');}
-    finally{if(mounted)setState(()=>_loading=false);}
+
+class _OrdersPageState extends State<OrdersPage> {
+  late final ApiClient _api;
+  bool _loading = true;
+  String? _error;
+  List<Map<String, dynamic>> _orders = [];
+  final Map<String, Future<List<Map<String, dynamic>>>> _historyFutures = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _api = ApiClient();
+    _load();
   }
-  String _status(String value)=>value.isEmpty?'قيد المعالجة':value;
-  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('طلباتي'),actions:[IconButton(onPressed:_load,icon:const Icon(Icons.refresh))]),
-    body:RefreshIndicator(onRefresh:_load,child:_loading&&_orders.isEmpty?const Center(child:CircularProgressIndicator())
-      :_error!=null&&_orders.isEmpty?ListView(children:[const SizedBox(height:100),Center(child:Text(_error!)),const SizedBox(height:12),Center(child:FilledButton(onPressed:_load,child:const Text('إعادة المحاولة')))])
-      :_orders.isEmpty?ListView(children:[const SizedBox(height:140),const Icon(Icons.receipt_long_outlined,size:58,color:AppTheme.muted),const SizedBox(height:12),const Center(child:Text('لا توجد طلبات حتى الآن.'))])
-      :ListView.separated(padding:const EdgeInsets.all(14),itemCount:_orders.length,separatorBuilder:(_,__)=>const SizedBox(height:8),itemBuilder:(context,index){
-        final o=_orders[index];List<dynamic> items=[];
-        try{final parsed=jsonDecode((o['items_json']??'[]').toString());if(parsed is List)items=parsed;}catch(_){}
-        final total=(o['total_price'] as num?)?.toDouble()??0;
-        return Card(child:ExpansionTile(leading:const Icon(Icons.receipt_long,color:AppTheme.primary),
-          title:Text('طلب ${o['id']??''}'),subtitle:Text('${_status((o['status']??'').toString())} · الإجمالي ${total.toStringAsFixed(0)} ريال'),
-          childrenPadding:const EdgeInsets.all(16),children:[
-            Align(alignment:Alignment.centerRight,child:Text('المتجر: ${o['vendor_name']??''}')),
-            const SizedBox(height:6),
-            ...items.whereType<Map>().map((item)=>ListTile(dense:true,title:Text((item['title']??'منتج').toString()),subtitle:Text('الكمية: ${item['quantity']??1}'),trailing:Text('${item['line_total']??0} ريال'))),
-            const Divider(),Align(alignment:Alignment.centerRight,child:Text('التوصيل: ${o['delivery_fee']??0} ريال')),
-            Align(alignment:Alignment.centerRight,child:Text('طريقة الدفع: ${o['payment_method']??'الدفع عند الاستلام'}')),
-            Align(alignment:Alignment.centerRight,child:Text('العنوان: ${o['address']??''}')),
-          ]));
-      })));
+
+  @override
+  void didUpdateWidget(covariant OrdersPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.token != widget.token) {
+      _historyFutures.clear();
+      _load();
+    }
+  }
+
+  @override
+  void dispose() {
+    _api.close();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final me = await _api.get('/auth/me', token: widget.token);
+      if (me is! Map || (me['id'] ?? '').toString().isEmpty) {
+        throw const FormatException('Invalid current-user response.');
+      }
+      final result = await _api.get(
+        '/orders/client/${Uri.encodeComponent(me['id'].toString())}',
+        token: widget.token,
+      );
+      if (result is! List) throw const FormatException('Invalid orders response.');
+      if (mounted) {
+        setState(() => _orders = result.whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item)).toList());
+      }
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = 'تعذر تحميل الطلبات.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _loadHistory(String orderId) async {
+    final result = await _api.get(
+      '/orders/${Uri.encodeComponent(orderId)}/history',
+      token: widget.token,
+    );
+    if (result is! List) throw const FormatException('Invalid order history response.');
+    return result.whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item)).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> _historyFuture(String orderId) =>
+      _historyFutures.putIfAbsent(orderId, () => _loadHistory(orderId));
+
+  String _status(String value) => value.isEmpty ? 'قيد المعالجة' : value;
+
+  String _date(String value) {
+    try {
+      return DateTime.parse(value).toLocal().toString().substring(0, 16);
+    } catch (_) {
+      return value;
+    }
+  }
+
+  Widget _historyWidget(String orderId) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _historyFuture(orderId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Padding(
+            padding: EdgeInsets.all(12),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text('تعذر تحميل سجل الحالة: ${snapshot.error}',
+                style: const TextStyle(color: AppTheme.error)),
+          );
+        }
+        final history = snapshot.data ?? const <Map<String, dynamic>>[];
+        if (history.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text('لا يوجد سجل حالة محفوظ لهذا الطلب القديم.'),
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Divider(),
+            Text('سجل تغييرات الحالة',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 6),
+            ...history.map((entry) {
+              final oldStatus = entry['old_status'] == null
+                  ? 'إنشاء الطلب'
+                  : entry['old_status'].toString();
+              return ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.history, color: AppTheme.primary),
+                title: Text('$oldStatus ← ${entry['new_status'] ?? ''}'),
+                subtitle: Text(
+                  '${_date((entry['created_at'] ?? '').toString())}\n'
+                  'بواسطة: ${entry['changed_by_role'] ?? ''} · ${entry['note'] ?? ''}',
+                ),
+                isThreeLine: true,
+              );
+            }),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget content;
+    if (_loading && _orders.isEmpty) {
+      content = const Center(child: CircularProgressIndicator());
+    } else if (_error != null && _orders.isEmpty) {
+      content = ListView(children: [
+        const SizedBox(height: 100),
+        Center(child: Text(_error!)),
+        const SizedBox(height: 12),
+        Center(child: FilledButton(onPressed: _load, child: const Text('إعادة المحاولة'))),
+      ]);
+    } else if (_orders.isEmpty) {
+      content = const ListView(children: [
+        SizedBox(height: 140),
+        Icon(Icons.receipt_long_outlined, size: 58, color: AppTheme.muted),
+        SizedBox(height: 12),
+        Center(child: Text('لا توجد طلبات حتى الآن.')),
+      ]);
+    } else {
+      content = ListView.separated(
+        padding: const EdgeInsets.all(14),
+        itemCount: _orders.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 8),
+        itemBuilder: (context, index) {
+          final order = _orders[index];
+          final orderId = (order['id'] ?? '').toString();
+          List<dynamic> items = [];
+          try {
+            final parsed = jsonDecode((order['items_json'] ?? '[]').toString());
+            if (parsed is List) items = parsed;
+          } catch (_) {}
+          final total = (order['total_price'] as num?)?.toDouble() ?? 0;
+          return Card(
+            child: ExpansionTile(
+              leading: const Icon(Icons.receipt_long, color: AppTheme.primary),
+              title: Text('طلب $orderId'),
+              subtitle: Text(
+                '${_status((order['status'] ?? '').toString())} · '
+                'الإجمالي ${total.toStringAsFixed(0)} ريال',
+              ),
+              onExpansionChanged: (expanded) {
+                if (expanded) {
+                  setState(() { _historyFuture(orderId); });
+                }
+              },
+              childrenPadding: const EdgeInsets.all(16),
+              children: [
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text('المتجر: ${order['vendor_name'] ?? ''}'),
+                ),
+                const SizedBox(height: 6),
+                ...items.whereType<Map>().map((item) => ListTile(
+                  dense: true,
+                  title: Text((item['title'] ?? 'منتج').toString()),
+                  subtitle: Text('الكمية: ${item['quantity'] ?? 1}'),
+                  trailing: Text('${item['line_total'] ?? 0} ريال'),
+                )),
+                const Divider(),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text('التوصيل: ${order['delivery_fee'] ?? 0} ريال'),
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text('طريقة الدفع: ${order['payment_method'] ?? 'الدفع عند الاستلام'}'),
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text('العنوان: ${order['address'] ?? ''}'),
+                ),
+                _historyWidget(orderId),
+              ],
+            ),
+          );
+        },
+      );
+    }
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('طلباتي'),
+        actions: [IconButton(onPressed: _load, icon: const Icon(Icons.refresh))],
+      ),
+      body: RefreshIndicator(onRefresh: _load, child: content),
+    );
+  }
 }

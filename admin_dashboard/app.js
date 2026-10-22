@@ -216,9 +216,21 @@
         notify("تم تحديث حالة الطلب.");
         await refreshData();
       });
+      const history = action("سجل تغييرات الحالة", "secondary", async () => {
+        const entries = await api("/orders/" + encodeURIComponent(order.id) + "/history");
+        if (!Array.isArray(entries) || entries.length === 0) {
+          window.alert("لا يوجد سجل حالة محفوظ لهذا الطلب القديم.");
+          return;
+        }
+        window.alert(entries.map(entry =>
+          (entry.old_status || "إنشاء الطلب") + " ← " + entry.new_status +
+          "\\n" + entry.created_at + " · " + entry.changed_by_role +
+          (entry.note ? " · " + entry.note : "")
+        ).join("\\n\\n"));
+      });
       list.push(record("طلب " + order.id, ["العميل: " + order.client_name + " · المتجر: " + order.vendor_name,
         "قيمة المنتجات: " + order.items_price + " · التوصيل: " + order.delivery_fee + " · الإجمالي: " + order.total_price + " ريال",
-        "طريقة الدفع: " + order.payment_method, "تاريخ الإنشاء: " + order.date], order.status, [select,save]));
+        "طريقة الدفع: " + order.payment_method, "تاريخ الإنشاء: " + order.date], order.status, [select,save,history]));
     });
     wrap.append(listOrEmpty(list, "لا توجد طلبات بعد."));
     setContent(wrap);
