@@ -20,8 +20,19 @@ def get_my_vendor_store(principal: dict = Depends(get_current_principal),
 
 @router.get("/public", response_model=list[VendorStoreSchema])
 def get_public_vendors(db: Session = Depends(get_db)):
-    return db.query(DBVendorStore).filter(DBVendorStore.status == "مفعل").order_by(
-        DBVendorStore.store_name.asc()).all()
+    # A visible store must have the same active owner relationship required by checkout.
+    return (
+        db.query(DBVendorStore)
+        .join(DBUser, DBVendorStore.owner_user_id == DBUser.id)
+        .filter(
+            DBVendorStore.status == "مفعل",
+            DBUser.status == "active",
+            DBUser.role.in_(["VENDOR", "SELLER"]),
+            DBUser.store_id == DBVendorStore.id,
+        )
+        .order_by(DBVendorStore.store_name.asc())
+        .all()
+    )
 
 @router.post("/register", response_model=VendorStoreSchema, status_code=201)
 def register_vendor(application: VendorApplicationRequest,

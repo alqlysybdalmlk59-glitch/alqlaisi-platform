@@ -5,7 +5,6 @@ Run from backend directory: uvicorn app.main:app --reload
 """
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -24,7 +23,6 @@ from app.core.runtime_config import (IS_PRODUCTION, CORS_ORIGINS, ALLOWED_HOSTS,
 from routers import auth, orders, products, support, users, vendors
 from routers.dependencies import get_db, require_admin, require_customer
 from schemas import CheckoutRequest, OrderSchema
-from typing import List
 
 validate_production_configuration()
 if IS_PRODUCTION:
@@ -113,7 +111,7 @@ def get_ai_sales_insights(_principal: dict = Depends(require_admin)):
     )
 
 
-@app.post("/api/checkout", response_model=List[OrderSchema], status_code=201, tags=["orders"])
+@app.post("/api/checkout", response_model=list[OrderSchema], status_code=201, tags=["orders"])
 def checkout_from_flutter(
     payload: CheckoutRequest,
     principal: dict = Depends(require_customer),

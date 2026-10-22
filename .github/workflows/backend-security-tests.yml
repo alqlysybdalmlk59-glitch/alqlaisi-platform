@@ -43,6 +43,10 @@ jobs:
         env:
           JWT_SECRET_KEY: test-only-secret-not-for-production-0123456789
         run: python -m unittest backend.test_auth_api -v
+      - name: Run production configuration security tests
+        env:
+          JWT_SECRET_KEY: test-only-secret-not-for-production-0123456789
+        run: python -m unittest backend.test_runtime_config -v
 
   flutter-analysis:
     runs-on: ubuntu-latest
