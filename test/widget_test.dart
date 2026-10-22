@@ -52,7 +52,7 @@ void main() {
 
     expect(
       find.text(
-        'تسجيل Google غير مهيأ في هذا البناء. أعد بناء التطبيق باستخدام GOOGLE_SERVER_CLIENT_ID الصحيح.',
+        'تسجيل Google غير مهيأ. استخدم معرّف Web OAuth الحقيقي من Google Cloud في GOOGLE_SERVER_CLIENT_ID.',
       ),
       findsOneWidget,
     );
