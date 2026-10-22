@@ -20,6 +20,7 @@ class _OrdersPageState extends State<OrdersPage> {
   String? _error;
   List<Map<String, dynamic>> _orders = [];
   final Map<String, Future<List<Map<String, dynamic>>>> _historyFutures = {};
+  final Map<String, Future<List<Map<String, dynamic>>>> _reviewFutures = {};
 
   @override
   void initState() {
@@ -33,6 +34,7 @@ class _OrdersPageState extends State<OrdersPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.token != widget.token) {
       _historyFutures.clear();
+      _reviewFutures.clear();
       _load();
     }
   }
@@ -80,6 +82,161 @@ class _OrdersPageState extends State<OrdersPage> {
 
   Future<List<Map<String, dynamic>>> _historyFuture(String orderId) =>
       _historyFutures.putIfAbsent(orderId, () => _loadHistory(orderId));
+
+
+  Future<List<Map<String, dynamic>>> _loadReviews(String orderId) async {
+    final result = await _api.get(
+      '/orders/${Uri.encodeComponent(orderId)}/reviews',
+      token: widget.token,
+    );
+    if (result is! List) throw const FormatException('Invalid reviews response.');
+    return result.whereType<Map>()
+        .map((row) => Map<String, dynamic>.from(row)).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> _reviewsFor(String orderId) =>
+      _reviewFutures.putIfAbsent(orderId, () => _loadReviews(orderId));
+
+  Widget _reviewSection(String orderId, String productId, String productName, bool delivered) {
+    if (!delivered) {
+      return const Padding(
+        padding: EdgeInsets.only(right: 16, bottom: 8),
+        child: Text('يمكن تقييم المنتج بعد تسليم الطلب فقط.',
+            style: TextStyle(color: AppTheme.muted)),
+      );
+    }
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _reviewsFor(orderId),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return TextButton(
+            onPressed: () => setState(() => _reviewFutures.remove(orderId)),
+            child: const Text('تعذر تحميل التقييم؛ اضغط لإعادة المحاولة'),
+          );
+        }
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: LinearProgressIndicator(),
+          );
+        }
+        Map<String, dynamic>? existing;
+        for (final review in snapshot.data ?? const <Map<String, dynamic>>[]) {
+          if (review['product_id']?.toString() == productId) {
+            existing = review;
+            break;
+          }
+        }
+        if (existing != null) {
+          return ListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            leading: const Icon(Icons.star, color: Colors.amber),
+            title: Text('تقييمك: ${existing['rating']}/5'),
+            subtitle: Text((existing['comment'] ?? '').toString()),
+          );
+        }
+        return Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: () => _showReviewDialog(orderId, productId, productName),
+            icon: const Icon(Icons.rate_review_outlined),
+            label: const Text('تقييم المنتج'),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showReviewDialog(String orderId, String productId, String productName) async {
+    int rating = 5;
+    final comment = TextEditingController();
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Text('تقييم $productName'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('التقييم متاح بعد استلام الطلب وتسجيله كـ «تم التسليم».'),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  value: rating,
+                  decoration: const InputDecoration(labelText: 'التقييم'),
+                  items: List.generate(5, (index) {
+                    final value = 5 - index;
+                    return DropdownMenuItem<int>(
+                      value: value,
+                      child: Text('$value / 5 ${'★' * value}'),
+                    );
+                  }),
+                  onChanged: (value) {
+                    if (value != null) setDialogState(() => rating = value);
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: comment,
+                  maxLength: 1000,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'تعليق اختياري',
+                    alignLabelWithHint: true,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('إرسال التقييم'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (submitted == true) {
+      try {
+        await _api.post(
+          '/orders/${Uri.encodeComponent(orderId)}/reviews',
+          token: widget.token,
+          body: {
+            'product_id': productId,
+            'rating': rating,
+            'comment': comment.text.trim(),
+          },
+        );
+        _reviewFutures.remove(orderId);
+        if (mounted) {
+          setState(() {});
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('تم حفظ تقييمك للمنتج.')),
+          );
+        }
+      } on ApiException catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error.message)),
+          );
+        }
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('تعذر حفظ التقييم؛ لم يتم تأكيد التغيير.')),
+          );
+        }
+      }
+    }
+    comment.dispose();
+  }
 
   String _status(String value) => value.isEmpty ? 'قيد المعالجة' : value;
 
@@ -197,12 +354,24 @@ class _OrdersPageState extends State<OrdersPage> {
                   child: Text('المتجر: ${order['vendor_name'] ?? ''}'),
                 ),
                 const SizedBox(height: 6),
-                ...items.whereType<Map>().map((item) => ListTile(
-                  dense: true,
-                  title: Text((item['title'] ?? 'منتج').toString()),
-                  subtitle: Text('الكمية: ${item['quantity'] ?? 1}'),
-                  trailing: Text('${item['line_total'] ?? 0} ريال'),
-                )),
+                ...items.whereType<Map>().map((item) {
+                  final productId = (item['product_id'] ?? '').toString();
+                  final productName = (item['title'] ?? 'منتج').toString();
+                  final delivered = (order['status'] ?? '').toString() == 'تم التسليم';
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ListTile(
+                        dense: true,
+                        title: Text(productName),
+                        subtitle: Text('الكمية: ${item['quantity'] ?? 1}'),
+                        trailing: Text('${item['line_total'] ?? 0} ريال'),
+                      ),
+                      if (productId.isNotEmpty)
+                        _reviewSection(orderId, productId, productName, delivered),
+                    ],
+                  );
+                }),
                 const Divider(),
                 Align(
                   alignment: Alignment.centerRight,
