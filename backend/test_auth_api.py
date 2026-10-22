@@ -540,6 +540,45 @@ class TestAuthAPI(unittest.TestCase):
             if previous is not None:
                 os.environ["GOOGLE_CLIENT_ID"] = previous
 
+    def test_customer_can_update_profile_and_phone_without_changing_identity(self):
+        token, user_id = self._register("777123503")
+        response = self.client.put(
+            "/auth/me/profile",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"full_name": "اسم معدل", "phone": "+967777000111"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["id"], user_id)
+        self.assertEqual(response.json()["full_name"], "اسم معدل")
+        self.assertEqual(response.json()["phone"], "+967777000111")
+        me = self.client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(me.status_code, 200, me.text)
+        self.assertEqual(me.json()["id"], user_id)
+        self.assertEqual(me.json()["phone"], "+967777000111")
+
+    def test_profile_update_rejects_duplicate_phone_without_partial_change(self):
+        token, user_id = self._register("777123504")
+        self._register("777123505")
+        response = self.client.put(
+            "/auth/me/profile",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"full_name": "يجب ألا يتغير", "phone": "777123505"},
+        )
+        self.assertEqual(response.status_code, 409, response.text)
+        with self.TestSession() as db:
+            account = db.query(models.DBUser).filter_by(id=user_id).first()
+            self.assertEqual(account.name, "مستخدم تجريبي")
+            self.assertEqual(account.phone, "777123504")
+
+    def test_profile_update_rejects_malformed_phone(self):
+        token, _user_id = self._register("777123506")
+        response = self.client.put(
+            "/auth/me/profile",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"full_name": "اسم معدل", "phone": "++--"},
+        )
+        self.assertEqual(response.status_code, 422, response.text)
+
     def test_wrong_password_is_rejected(self):
         self.client.post("/auth/register", json={
             "full_name": "عميل تجريبي",
