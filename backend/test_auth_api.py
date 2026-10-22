@@ -77,7 +77,10 @@ class TestAuthAPI(unittest.TestCase):
 
     def test_business_routes_require_authentication(self):
         self.assertEqual(self.client.get("/api/vendors/").status_code, 401)
-        self.assertEqual(self.client.post("/api/orders/checkout", json=[]).status_code, 401)
+        self.assertEqual(self.client.post("/api/orders/checkout", json={
+            "recipient_name": "اختبار عميل", "phone": "777000000",
+            "delivery_address": "صنعاء الحي الشارع", "items": [{"product_id": "p1", "quantity": 1}],
+        }).status_code, 401)
         self.assertEqual(self.client.get("/api/support/").status_code, 401)
 
     def test_customer_cannot_access_admin_vendor_list(self):
@@ -100,12 +103,14 @@ class TestAuthAPI(unittest.TestCase):
 
     def _admin_token(self):
         with self.TestSession() as db:
-            admin = models.DBUser(id="admin_test", name="مدير الاختبار",
-                email="admin-test@example.com", role="ADMIN", phone="700000000",
-                address="", password_hash=None, status="active")
-            db.add(admin)
-            db.commit()
-            db.refresh(admin)
+            admin = db.query(models.DBUser).filter_by(id="admin_test").first()
+            if admin is None:
+                admin = models.DBUser(id="admin_test", name="مدير الاختبار",
+                    email="admin-test@example.com", role="ADMIN", phone="700000000",
+                    address="", password_hash=None, status="active")
+                db.add(admin)
+                db.commit()
+                db.refresh(admin)
             return auth._session(admin)["access_token"]
 
     def _approved_store_and_product(self, seller_phone="777123470"):
