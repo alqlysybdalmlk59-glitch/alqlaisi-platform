@@ -49,6 +49,25 @@ class ApiClient {
     }
   }
 
+  Future<dynamic> put(
+    String endpoint, {
+    Map<String, dynamic>? body,
+    String? token,
+  }) async {
+    try {
+      final url = Uri.parse('$baseUrl$endpoint');
+      final response = await _client.put(
+        url,
+        headers: _headers(token),
+        body: body != null ? jsonEncode(body) : null,
+      );
+      return _processResponse(response);
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      throw ApiException(message: 'فشل الاتصال بالخادم: $e');
+    }
+  }
+
   dynamic _processResponse(http.Response response) {
     dynamic decoded;
     try {
