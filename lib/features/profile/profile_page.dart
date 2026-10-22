@@ -60,8 +60,13 @@ class _ProfilePageState extends State<ProfilePage>{
         onTap:()=>Navigator.of(context).push(MaterialPageRoute<void>(builder:(_)=>SupportPage(token:widget.token))))),
       Card(child:ListTile(leading:const Icon(Icons.storefront),title:const Text('حساب البائع والمتجر'),
         subtitle:Text(_store==null?'لم تقدم طلب متجر بعد.': '${_store?['store_name']??''} · ${_store?['status']??'قيد المراجعة'}'),
-        trailing:const Icon(Icons.chevron_left),onTap:_store==null&&!_applying?_applyStore:null)),
-      if(_store==null)Padding(padding:const EdgeInsets.only(top:8),child:FilledButton.icon(onPressed:_applying?null:_applyStore,icon:const Icon(Icons.add_business),label:Text(_applying?'جارٍ الإرسال...':'طلب فتح متجر'))),
+        trailing:const Icon(Icons.chevron_left),
+        onTap:(_store==null || _store?['status']=='مرفوض')&&!_applying?_applyStore:null)),
+      if(_store==null || _store?['status']=='مرفوض')
+        Padding(padding:const EdgeInsets.only(top:8),child:FilledButton.icon(
+          onPressed:_applying?null:_applyStore,
+          icon:const Icon(Icons.add_business),
+          label:Text(_applying?'جارٍ الإرسال...':_store==null?'طلب فتح متجر':'إعادة تقديم طلب المتجر'))),
       const SizedBox(height:20),OutlinedButton.icon(onPressed:widget.onLogout,icon:const Icon(Icons.logout),label:const Text('تسجيل الخروج')),
     ]));
 }
