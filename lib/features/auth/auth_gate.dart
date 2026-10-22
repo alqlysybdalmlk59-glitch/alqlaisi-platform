@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/network/api_client.dart';
+import '../../core/network/api_endpoints.dart';
 import '../../core/theme/app_theme.dart';
 import '../shell/customer_shell.dart';
 import '../favorites/favorites_store.dart';
@@ -37,7 +38,11 @@ class _AuthGateState extends State<AuthGate> {
       storage: SessionStorage(),
     );
 
-    _restoreSession();
+    if (ApiEndpoints.configurationError == null) {
+      _restoreSession();
+    } else {
+      _starting = false;
+    }
   }
 
   Future<void> _restoreSession() async {
@@ -89,6 +94,32 @@ class _AuthGateState extends State<AuthGate> {
 
   @override
   Widget build(BuildContext context) {
+    final configurationError = ApiEndpoints.configurationError;
+    if (configurationError != null) {
+      return Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 500),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.security, size: 56, color: AppTheme.error),
+                    const SizedBox(height: 16),
+                    const Text('إعداد الاتصال غير مكتمل',
+                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 12),
+                    Text(configurationError, textAlign: TextAlign.center),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     if (_starting) {
       return const Scaffold(
         body: Center(
