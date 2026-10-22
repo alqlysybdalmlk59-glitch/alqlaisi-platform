@@ -83,7 +83,7 @@ class SellerApi {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = decoded is Map ? (decoded['detail'] ?? decoded['message']) : null;
       final message = detail?.toString() ??
-          'فشل الطلب (' + response.statusCode.toString() + ').';
+          'فشل الطلب (${response.statusCode}).';
       throw SellerApiException(message);
     }
     return decoded;
