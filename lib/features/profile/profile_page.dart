@@ -65,13 +65,17 @@ class _ProfilePageState extends State<ProfilePage>{
         );
       }
     } on ApiException catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message)),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+      }
     } catch (_) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تعذر ربط Google. لم يتم تعديل الحساب؛ تحقق من الإعدادات والاتصال.')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر ربط Google. لم يتم تعديل الحساب؛ تحقق من الإعدادات والاتصال.')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _linkingGoogle = false);
     }
