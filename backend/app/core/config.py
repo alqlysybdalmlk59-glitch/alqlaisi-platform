@@ -1,4 +1,6 @@
 from functools import lru_cache
+
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,9 +9,14 @@ class Settings(BaseSettings):
     app_env: str = "development"
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
-    database_url: str = "sqlite:///./test.db"
-    jwt_secret_key: str = "dev_secret_key_change_in_production"
-    access_token_expire_minutes: int = 30
+
+    # Required: do not silently fall back to SQLite or a placeholder database.
+    database_url: str
+
+    # Required: use a long, random secret from the local .env or deployment environment.
+    jwt_secret_key: str = Field(min_length=32)
+    access_token_expire_minutes: int = Field(default=30, ge=5, le=1440)
+
     google_client_id: str = ""
     cors_origins: str = "http://localhost:3000"
 
