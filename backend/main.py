@@ -14,11 +14,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import database
 import models
-from routers import products, orders, vendors, support, users
+from routers import products, orders, vendors, support, users, auth
 
 # Existing SQLite schema and legacy routes are intentionally retained for this
 # first consolidation step. Database migration will be handled separately.
 models.Base.metadata.create_all(bind=database.engine)
+database.ensure_schema_compatibility()
 
 
 def seed_initial_data():
@@ -109,7 +110,7 @@ app.include_router(products.router)
 app.include_router(orders.router)
 app.include_router(vendors.router)
 app.include_router(support.router)
-app.include_router(users.router)
+app.include_router(users.router)  # Legacy endpoints retained during migration.\napp.include_router(auth.router)
 
 
 @app.get("/")
