@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../core/network/api_client.dart';
+import '../../core/network/api_exception.dart';
+
 import '../../core/cart/cart_scope.dart';
 import '../../core/theme/app_theme.dart';
 import '../cart/services/cart_service.dart';
@@ -130,6 +133,9 @@ class ProductDetailsPage extends StatelessWidget {
                 ? 'لا يوجد وصف إضافي لهذا المنتج حاليًا.'
                 : product.description,
           ),
+          const SizedBox(height: 20),
+          _ProductReviews(productId: product.id),
+          const SizedBox(height: 16),
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: available ? () => _addToCart(context) : null,
@@ -163,5 +169,128 @@ class ProductDetailsPage extends StatelessWidget {
         SnackBar(content: Text(error.message)),
       );
     }
+  }
+}
+
+
+class _ProductReviews extends StatefulWidget {
+  const _ProductReviews({required this.productId});
+  final String productId;
+
+  @override
+  State<_ProductReviews> createState() => _ProductReviewsState();
+}
+
+class _ProductReviewsState extends State<_ProductReviews> {
+  late final ApiClient _api;
+  bool _loading = true;
+  String? _error;
+  List<Map<String, dynamic>> _reviews = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _api = ApiClient();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _api.close();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ProductReviews oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.productId != widget.productId) _load();
+  }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final result = await _api.get(
+        '/products/${Uri.encodeComponent(widget.productId)}/reviews',
+      );
+      if (result is! List) throw const FormatException('Invalid reviews response.');
+      if (mounted) {
+        setState(() => _reviews = result.whereType<Map>()
+            .map((row) => Map<String, dynamic>.from(row)).toList());
+      }
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = 'تعذر تحميل تقييمات المنتج.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final total = _reviews.length;
+    final average = total == 0
+        ? 0.0
+        : _reviews.fold<double>(
+              0,
+              (sum, review) => sum + ((review['rating'] as num?)?.toDouble() ?? 0),
+            ) /
+            total;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('تقييمات العملاء', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 6),
+            if (!_loading && _error == null)
+              Row(
+                children: [
+                  const Icon(Icons.star, color: Colors.amber),
+                  const SizedBox(width: 6),
+                  Text(total == 0 ? 'لا توجد تقييمات بعد' : '${average.toStringAsFixed(1)} من 5 · $total تقييم'),
+                ],
+              ),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_error != null)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(_error!, style: const TextStyle(color: AppTheme.error)),
+                  TextButton.icon(
+                    onPressed: _load,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('إعادة المحاولة'),
+                  ),
+                ],
+              )
+            else if (_reviews.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text('ستظهر هنا تقييمات العملاء الذين استلموا المنتج.'),
+              )
+            else
+              ..._reviews.map((review) {
+                final rating = (review['rating'] as num?)?.toInt() ?? 0;
+                final comment = (review['comment'] ?? '').toString();
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(child: Icon(Icons.person_outline)),
+                  title: Text((review['reviewer_name'] ?? 'عميل').toString()),
+                  subtitle: comment.isEmpty ? null : Text(comment),
+                  trailing: Text('${rating.clamp(0, 5)} ★',
+                      style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
+                );
+              }),
+          ],
+        ),
+      ),
+    );
   }
 }
