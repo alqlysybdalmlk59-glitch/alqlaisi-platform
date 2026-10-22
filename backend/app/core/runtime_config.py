@@ -35,10 +35,9 @@ def validate_production_configuration() -> None:
     raw_allowed_hosts = os.getenv("ALLOWED_HOSTS", "").strip()
     if not raw_allowed_hosts:
         raise RuntimeError("Production requires ALLOWED_HOSTS to be explicitly configured; local development defaults are not accepted.")
-    configured_hosts = [value.strip() for value in raw_allowed_hosts.split(",") if value.strip()]
-    if not configured_hosts or "*" in configured_hosts:
+    if not ALLOWED_HOSTS or "*" in ALLOWED_HOSTS:
         raise RuntimeError("Production requires explicit ALLOWED_HOSTS; wildcard hosts are forbidden.")
-    if any("://" in host or "/" in host for host in configured_hosts):
+    if any("://" in host or "/" in host for host in ALLOWED_HOSTS):
         raise RuntimeError("ALLOWED_HOSTS must contain hostnames only, not URLs.")
 
 
