@@ -126,6 +126,16 @@ class SellerApi {
   Future<List<Map<String, dynamic>>> orders(String token, String storeId) async =>
       _asList(await request('/orders/vendor/${Uri.encodeComponent(storeId)}', token: token));
 
+  Future<List<Map<String, dynamic>>> myTickets(String token) async =>
+      _asList(await request('/support/mine', token: token));
+
+  Future<void> createTicket(String token, String subject, String details) async {
+    await request('/support/', method: 'POST', token: token, body: {
+      'subject': subject.trim(),
+      'details': details.trim(),
+    });
+  }
+
   Future<Map<String, dynamic>> salesSummary(String token, String storeId) async {
     final result = await request(
       '/orders/vendor/${Uri.encodeComponent(storeId)}/summary',
@@ -759,6 +769,19 @@ class _SellerHomePageState extends State<SellerHomePage> {
   }
 
   Widget _settings(String storeName) => ListView(padding: const EdgeInsets.all(16), children: [
+    Card(
+      child: ListTile(
+        leading: const Icon(Icons.support_agent, color: _brand),
+        title: const Text('الدعم الفني للبائعين'),
+        subtitle: const Text('إرسال استفسار ومتابعة ردود فريق المنصة'),
+        trailing: const Icon(Icons.chevron_left),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SellerSupportPage(api: widget.api, token: widget.token),
+          ),
+        ),
+      ),
+    ),
     Card(child: ListTile(leading: const Icon(Icons.storefront), title: Text(storeName),
       subtitle: Text('معرّف المتجر: ${widget.store['id']}'))),
     Card(child: ListTile(leading: const Icon(Icons.person_outline),
@@ -770,6 +793,204 @@ class _SellerHomePageState extends State<SellerHomePage> {
       subtitle: Text('الدفع عند الاستلام فقط في الإصدار الأول.'))),
     FilledButton.icon(onPressed: widget.onLogout, icon: const Icon(Icons.logout), label: const Text('تسجيل الخروج')),
   ]);
+}
+
+class SellerSupportPage extends StatefulWidget {
+  const SellerSupportPage({
+    super.key,
+    required this.api,
+    required this.token,
+  });
+
+  final SellerApi api;
+  final String token;
+
+  @override
+  State<SellerSupportPage> createState() => _SellerSupportPageState();
+}
+
+class _SellerSupportPageState extends State<SellerSupportPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _subject = TextEditingController();
+  final _details = TextEditingController();
+  List<Map<String, dynamic>> _tickets = [];
+  bool _loading = true;
+  bool _submitting = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _subject.dispose();
+    _details.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final tickets = await widget.api.myTickets(widget.token);
+      if (mounted) setState(() => _tickets = tickets);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = error is SellerApiException
+            ? error.message
+            : 'تعذر تحميل تذاكر الدعم.');
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _submit() async {
+    if (_submitting || !_formKey.currentState!.validate()) return;
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      await widget.api.createTicket(
+        widget.token,
+        _subject.text,
+        _details.text,
+      );
+      _subject.clear();
+      _details.clear();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم إرسال تذكرة الدعم.')),
+        );
+      }
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = error is SellerApiException
+            ? error.message
+            : 'تعذر إرسال التذكرة.');
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('الدعم الفني للبائعين'),
+        actions: [
+          IconButton(
+            tooltip: 'تحديث التذاكر',
+            onPressed: _load,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const Text(
+            'تُحفظ التذكرة على حسابك الحالي، ولا يستطيع حساب آخر الاطلاع عليها.',
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextFormField(
+                      controller: _subject,
+                      maxLength: 180,
+                      decoration: const InputDecoration(labelText: 'عنوان المشكلة'),
+                      validator: (value) => value == null || value.trim().length < 2
+                          ? 'اكتب عنواناً واضحاً.'
+                          : null,
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _details,
+                      maxLength: 5000,
+                      maxLines: 4,
+                      decoration: const InputDecoration(labelText: 'التفاصيل'),
+                      validator: (value) => value == null || value.trim().length < 5
+                          ? 'اكتب تفاصيل المشكلة.'
+                          : null,
+                    ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 8),
+                      Text(_error!, style: const TextStyle(color: Colors.red)),
+                    ],
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      onPressed: _submitting ? null : _submit,
+                      icon: _submitting
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.send),
+                      label: Text(_submitting ? 'جارٍ الإرسال...' : 'إرسال التذكرة'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text('تذاكري السابقة', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          if (_loading && _tickets.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_tickets.isEmpty && _error == null)
+            const Card(
+              child: Padding(
+                padding: EdgeInsets.all(18),
+                child: Text('لا توجد تذاكر سابقة.'),
+              ),
+            )
+          else
+            ..._tickets.map((ticket) => Card(
+              child: ExpansionTile(
+                leading: const Icon(Icons.support_agent, color: _brand),
+                title: Text((ticket['subject'] ?? 'تذكرة دعم').toString()),
+                subtitle: Text('الحالة: ${ticket['status'] ?? 'مفتوحة'}'),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                children: [
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text((ticket['details'] ?? '').toString()),
+                  ),
+                  const Divider(),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      'رد المنصة: ${(ticket['response'] ?? '').toString().isEmpty
+                          ? 'لم يتم الرد بعد'
+                          : ticket['response']}',
+                    ),
+                  ),
+                ],
+              ),
+            )),
+        ],
+      ),
+    );
+  }
 }
 
 class _MetricCard extends StatelessWidget {
