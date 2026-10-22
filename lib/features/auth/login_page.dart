@@ -208,18 +208,14 @@ class _LoginPageState extends State<LoginPage> {
                         : const Text('تسجيل الدخول'),
                   ),
                   const SizedBox(height: 12),
-                  if (_googleServerClientId.isNotEmpty)
-                    OutlinedButton.icon(
-                      onPressed: _loading ? null : _loginWithGoogle,
-                      icon: const Icon(Icons.g_mobiledata, size: 30),
-                      label: const Text('متابعة باستخدام Google'),
-                    )
-                  else
-                    const Text(
-                      'تسجيل Google يحتاج إعداد OAuth في نسخة التطبيق قبل إتاحته.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AppTheme.muted),
-                    ),
+                  // Keep the Google action visible in every build. When OAuth
+                  // is not configured, tapping it shows the exact setup error
+                  // instead of making a real feature look like a missing button.
+                  OutlinedButton.icon(
+                    onPressed: _loading ? null : _loginWithGoogle,
+                    icon: const Icon(Icons.g_mobiledata, size: 30),
+                    label: const Text('متابعة باستخدام Google'),
+                  ),
                   const SizedBox(height: 12),
                   TextButton(
                     onPressed: _loading ? null : widget.onRegister,
