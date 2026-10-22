@@ -1,10 +1,10 @@
-import json, uuid
+import json, uuid, math
 from collections import defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from models import DBOrder, DBProduct, DBVendorStore
+from models import DBOrder, DBProduct, DBUser, DBVendorStore
 from schemas import CheckoutRequest, OrderSchema
 from routers.dependencies import get_db, get_current_principal, require_admin, require_customer, require_seller_or_admin
 
@@ -33,13 +33,29 @@ def create_orders(payload: CheckoutRequest, principal: dict, db: Session) -> lis
     stores: dict[str, DBVendorStore] = {}
     for product_id, quantity in quantities.items():
         product = by_id[product_id]
-        if product.review_status != "منشور" or not product.is_available or product.price <= 0:
+        if (
+            product.review_status != "منشور"
+            or not product.is_available
+            or not math.isfinite(float(product.price))
+            or product.price <= 0
+        ):
             raise HTTPException(status_code=409, detail=f"المنتج «{product.title}» غير متاح للطلب حالياً.")
         store = db.query(DBVendorStore).filter(DBVendorStore.id == product.vendor_id).first()
         if store is None or store.status != "مفعل":
             raise HTTPException(status_code=409, detail=f"متجر المنتج «{product.title}» غير معتمد حالياً.")
+        owner = db.query(DBUser).filter(DBUser.id == store.owner_user_id).first() if store.owner_user_id else None
+        if (
+            owner is None
+            or owner.status != "active"
+            or owner.role.upper() not in {"VENDOR", "SELLER"}
+            or owner.store_id != store.id
+        ):
+            raise HTTPException(status_code=409, detail=f"مالك متجر المنتج «{product.title}» غير نشط أو غير مرتبط بصورة صحيحة.")
         try:
-            unit_price = Decimal(str(product.price)).quantize(Decimal("0.01"))
+            raw_price = Decimal(str(product.price))
+            if not raw_price.is_finite() or raw_price <= 0:
+                raise InvalidOperation
+            unit_price = raw_price.quantize(Decimal("0.01"))
         except InvalidOperation:
             raise HTTPException(status_code=409, detail="سعر أحد المنتجات غير صالح.")
         line_total = (unit_price * quantity).quantize(Decimal("0.01"))
@@ -55,7 +71,7 @@ def create_orders(payload: CheckoutRequest, principal: dict, db: Session) -> lis
         store = stores[store_id]
         fee = Decimal(str(store.delivery_fee or 0)).quantize(Decimal("0.01"))
         subtotal = subtotals[store_id].quantize(Decimal("0.01"))
-        if fee < 0:
+        if not fee.is_finite() or fee < 0:
             raise HTTPException(status_code=409, detail="رسوم توصيل غير صالحة.")
         order = DBOrder(id=f"order_{uuid.uuid4().hex}", client_id=principal["id"],
             client_name=principal["name"], vendor_id=store.id, vendor_name=store.store_name,
