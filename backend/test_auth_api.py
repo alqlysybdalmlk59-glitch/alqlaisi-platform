@@ -186,6 +186,27 @@ class TestAuthAPI(unittest.TestCase):
             headers={"Authorization": f"Bearer {seller_token}"})
         self.assertEqual(listed.status_code, 200, listed.text)
         self.assertEqual(len(listed.json()), 1)
+        status_update = self.client.put(
+            f"/api/orders/{order['id']}/status?status=قيد التجهيز",
+            headers={"Authorization": f"Bearer {seller_token}"},
+        )
+        self.assertEqual(status_update.status_code, 200, status_update.text)
+        history = self.client.get(
+            f"/api/orders/{order['id']}/history",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+        )
+        self.assertEqual(history.status_code, 200, history.text)
+        self.assertEqual(len(history.json()), 2)
+        self.assertIsNone(history.json()[0]["old_status"])
+        self.assertEqual(history.json()[0]["new_status"], "بانتظار القبول")
+        self.assertEqual(history.json()[1]["old_status"], "بانتظار القبول")
+        self.assertEqual(history.json()[1]["new_status"], "قيد التجهيز")
+        other_token, _ = self._register("777123490")
+        forbidden = self.client.get(
+            f"/api/orders/{order['id']}/history",
+            headers={"Authorization": f"Bearer {other_token}"},
+        )
+        self.assertEqual(forbidden.status_code, 403)
 
     def test_seller_cannot_access_another_store_products(self):
         seller_a, _admin, _store_a, _product_a = self._approved_store_and_product("777123472")

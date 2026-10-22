@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from models import DBOrder, DBProduct, DBUser, DBVendorStore
-from schemas import CheckoutRequest, OrderSchema
+from models import DBOrder, DBOrderStatusHistory, DBProduct, DBUser, DBVendorStore
+from schemas import CheckoutRequest, OrderSchema, OrderStatusHistorySchema
 from routers.dependencies import get_db, get_current_principal, require_admin, require_customer, require_seller_or_admin
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
@@ -80,6 +80,16 @@ def create_orders(payload: CheckoutRequest, principal: dict, db: Session) -> lis
             payment_method="الدفع عند الاستلام", address=address, status="بانتظار القبول",
             date=datetime.now(timezone.utc).isoformat())
         db.add(order)
+        db.add(DBOrderStatusHistory(
+            id=f"order_history_{uuid.uuid4().hex}",
+            order_id=order.id,
+            old_status=None,
+            new_status=order.status,
+            changed_by_user_id=principal["id"],
+            changed_by_role=principal["role"],
+            note="تم إنشاء الطلب",
+            created_at=order.date,
+        ))
         result.append(order)
     try:
         db.commit()
@@ -111,6 +121,28 @@ def get_vendor_orders(vendor_id: str, principal: dict = Depends(require_seller_o
         raise HTTPException(status_code=403, detail="لا يمكنك الاطلاع على طلبات متجر آخر.")
     return db.query(DBOrder).filter(DBOrder.vendor_id == vendor_id).order_by(DBOrder.date.desc()).all()
 
+@router.get("/{order_id}/history", response_model=list[OrderStatusHistorySchema])
+def get_order_status_history(
+    order_id: str,
+    principal: dict = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+):
+    order = db.query(DBOrder).filter(DBOrder.id == order_id).first()
+    if order is None:
+        raise HTTPException(status_code=404, detail="الطلب غير موجود")
+    role = principal["role"]
+    can_view = (
+        role == "ADMIN"
+        or (role in {"CLIENT", "CUSTOMER"} and principal["id"] == order.client_id)
+        or (role in {"VENDOR", "SELLER"} and principal.get("store_id") == order.vendor_id)
+    )
+    if not can_view:
+        raise HTTPException(status_code=403, detail="لا يمكنك الاطلاع على سجل هذا الطلب.")
+    return db.query(DBOrderStatusHistory).filter(
+        DBOrderStatusHistory.order_id == order_id
+    ).order_by(DBOrderStatusHistory.created_at.asc(), DBOrderStatusHistory.id.asc()).all()
+
+
 @router.put("/{order_id}/status")
 def update_order_status(order_id: str, status: str, principal: dict = Depends(require_seller_or_admin), db: Session = Depends(get_db)):
     order = db.query(DBOrder).filter(DBOrder.id == order_id).first()
@@ -124,6 +156,17 @@ def update_order_status(order_id: str, status: str, principal: dict = Depends(re
         raise HTTPException(status_code=409, detail="الطلب منتهٍ ولا يمكن تغيير حالته.")
     if principal["role"] != "ADMIN" and status not in SELLER_TRANSITIONS.get(order.status, set()):
         raise HTTPException(status_code=409, detail="انتقال حالة الطلب غير مسموح للبائع.")
+    previous_status = order.status
     order.status = status
+    db.add(DBOrderStatusHistory(
+        id=f"order_history_{uuid.uuid4().hex}",
+        order_id=order.id,
+        old_status=previous_status,
+        new_status=status,
+        changed_by_user_id=principal["id"],
+        changed_by_role=principal["role"],
+        note="تحديث حالة الطلب",
+        created_at=datetime.now(timezone.utc).isoformat(),
+    ))
     db.commit()
     return {"status": "updated", "new_status": status}

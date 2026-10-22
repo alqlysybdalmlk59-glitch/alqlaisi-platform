@@ -14,7 +14,7 @@ A green CI run means the checks in that workflow passed; it is not proof that ev
 - Tenant isolation: sellers may only read/manage their own store products and orders.
 - Product publication and prices: a new seller product is pending, zero-priced and unavailable. Admin sets the customer price; seller then manually toggles availability.
 - Checkout: server derives price, product availability/publication, store, and delivery fee from database data; rejects unsupported payment methods, ignores supplied totals, and splits a mixed cart into per-store orders.
-- Order identity/state: user identity comes from the token/database, seller order updates are store-scoped and constrained to allowed transitions.
+- Order identity/state: user identity comes from the token/database, seller order updates are store-scoped and constrained to allowed transitions. Every creation/status change is recorded in an order-status audit log, and only the customer, owning seller, or admin can read that log.
 - Support ticket identity: creator fields are server-supplied; users can query their own tickets.
 - Production startup: PostgreSQL, long JWT secret, Google server client ID, exact HTTPS CORS origins, explicit allowed hosts, required migrated tables/columns, and security headers are enforced as deployment gates.
 - Administration: the web dashboard can link a store to an account and activate/suspend users through protected routes; owner reassignment is rejected by default.

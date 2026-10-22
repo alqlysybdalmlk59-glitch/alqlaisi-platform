@@ -69,6 +69,17 @@ class CheckoutRequest(BaseModel):
     payment_method: str = "cash_on_delivery"
     items: list[CheckoutItem] = Field(min_length=1, max_length=100)
 
+class OrderStatusHistorySchema(ORMModel):
+    id: str
+    order_id: str
+    old_status: Optional[str] = None
+    new_status: str
+    changed_by_user_id: str
+    changed_by_role: str
+    note: str = ""
+    created_at: str
+
+
 class VendorStoreSchema(ORMModel):
     id: str
     store_name: str

@@ -45,6 +45,7 @@ def validate_production_database_schema(engine) -> None:
         "products": {"id", "vendor_id", "price", "is_available", "review_status"},
         "orders": {"id", "client_id", "vendor_id", "items_price", "delivery_fee", "total_price"},
         "support_tickets": {"id", "user_id", "status"},
+        "order_status_history": {"id", "order_id", "old_status", "new_status", "changed_by_user_id", "changed_by_role", "created_at"},
     }
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())

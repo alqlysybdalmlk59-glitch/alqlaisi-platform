@@ -68,3 +68,16 @@ class DBSupportTicket(Base):
     details = Column(Text, nullable=False)
     status = Column(String, default="مفتوحة")
     response = Column(Text, default="")
+
+
+class DBOrderStatusHistory(Base):
+    """Append-only record of every order status change and the acting account."""
+    __tablename__ = "order_status_history"
+    id = Column(String, primary_key=True, index=True)
+    order_id = Column(String, nullable=False, index=True)
+    old_status = Column(String, nullable=True)
+    new_status = Column(String, nullable=False)
+    changed_by_user_id = Column(String, nullable=False, index=True)
+    changed_by_role = Column(String, nullable=False)
+    note = Column(Text, default="")
+    created_at = Column(String, nullable=False)
