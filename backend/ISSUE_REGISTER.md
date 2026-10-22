@@ -26,7 +26,7 @@ A green CI run means the checks in that workflow passed; it is not proof that ev
 
 1. Google OAuth must be configured with `GOOGLE_CLIENT_ID`, `GOOGLE_SERVER_CLIENT_ID`, the final Android application ID and signing SHA-1, then tested on a device. Automated tests mock Google verification and cannot prove real credentials work.
 2. Forgot-password deliberately returns 501 because there is no verified SMS/email recovery channel with expiry/rate limiting.
-3. Dedicated seller Flutter app and admin web dashboard have initial functional screens in this branch. CI is being expanded to analyze the seller app and syntax-check the dashboard; real end-to-end testing is still required.
+3. The customer and seller apps now have checked-in Android Gradle wrappers and CI builds debug APKs; customer phone validation is covered by Flutter tests. The admin web dashboard is syntax-checked. Real browser/device purchase and operations acceptance tests are still required.
 4. Internal delivery still needs an operations board and employee/courier assignment; order-state audit history exists, but there is no full dispatch workflow yet.
 5. Version 1 payment remains cash on delivery. No online payments or transfers are implemented.
 6. Commission percentage and settlement policy remain undecided. No real financial transfers are implemented.
@@ -35,7 +35,7 @@ A green CI run means the checks in that workflow passed; it is not proof that ev
 9. Before production, set a strong JWT secret, explicit CORS origins and allowed hosts, deploy behind HTTPS ingress/rate limiting (Nginx template added), keep port 8000 private, verify audit logs, and test backup/restore.
 10. Reconcile legacy store rows with null `owner_user_id` and resolve duplicated/inaccurate mappings through admin review; each manual link now requires a recorded verification note.
 11. `/api/ai/sales-insights` is still a placeholder and is not connected to actual analytics.
-12. Current CI compiles Python, runs security/auth and production-config tests, analyzes the customer Flutter app and seller app, and syntax-checks the admin dashboard JavaScript; it does not replace device/browser end-to-end tests or deployment verification.
+12. Current CI compiles Python, runs auth/access-control/production-config tests, tests customer phone validation, analyzes and debug-builds the customer and seller Android apps, and syntax-checks the admin dashboard JavaScript. It does not replace real Google OAuth, release signing, device/browser end-to-end tests, or deployment verification.
 
 ## Acceptance gates
 
@@ -44,7 +44,7 @@ A green CI run means the checks in that workflow passed; it is not proof that ev
 - [ ] Production settings fail closed on SQLite, missing OAuth configuration, missing explicit ALLOWED_HOSTS, wildcard CORS, or wildcard hosts.
 - [ ] Seller ownership mismatch, server-calculated checkout, and store-owner audit lifecycle tests pass.
 - [ ] Customer checkout passes static analysis and a manual test against a running API.
-- [ ] Dedicated seller app and admin dashboard pass their own checks.
+- [ ] Customer and seller debug APK builds and analysis pass; admin dashboard JavaScript syntax check passes.
 - [ ] Google OAuth tested with configured credentials on a real device.
 - [ ] Database migration and backup verified before an engine switch.
 - [ ] Changes remain on this branch until the owner requests merge.

@@ -5,6 +5,7 @@ import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/theme/app_theme.dart';
 import '../support/support_page.dart';
+import '../auth/validators/auth_validators.dart';
 
 const String _googleServerClientId =
     String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
@@ -120,14 +121,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   controller: phone,
                   keyboardType: TextInputType.phone,
                   decoration: const InputDecoration(labelText: 'رقم الهاتف'),
-                  validator: (value) {
-                    final normalized = (value ?? '')
-                        .trim()
-                        .replaceAll(RegExp(r'[\\s()-]'), '');
-                    return RegExp(r'^\\+?[0-9]{8,19}$').hasMatch(normalized)
-                        ? null
-                        : 'أدخل رقماً من 8 إلى 19 رقماً مع + اختياري.';
-                  },
+                  validator: AuthValidators.phone,
                 ),
                 const SizedBox(height: 8),
                 const Text(

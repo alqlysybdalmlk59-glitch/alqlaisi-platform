@@ -43,7 +43,11 @@ flutter run --dart-define=API_BASE_URL=https://YOUR_API_HOST/api --dart-define=G
 
 Set the exact same Web client ID as the server `GOOGLE_CLIENT_ID`. The server validates Google signature, audience and expiry through `google-auth`, requires `email_verified=true`, and stores the stable Google `sub` with a unique index. The web client ID is not a secret; the ID token is an assertion and must never be trusted until the server validates it.
 
-The Android project currently has an example application ID in Gradle. Replace it with the final unique application ID **before** creating the OAuth Android client and calculating the release SHA-1. Until the real OAuth clients and release signing configuration exist, genuine Google sign-in cannot be certified by CI alone.
+The customer application ID is now `com.alqlaisi.platform` and the independent seller app ID is `com.alqlaisi.seller`. Create the Android OAuth client(s) for these exact IDs and each required signing certificate SHA-1. Do not rename an ID after publishing it; if these IDs are not accepted by the owner's Google Cloud setup, coordinate another final ID before the first release. Both Gradle projects intentionally refuse release packaging without a private release keystore; they do not fall back to the public debug key.
+
+Customer release signing environment variables: `ALQLAISI_ANDROID_KEYSTORE_PATH`, `ALQLAISI_ANDROID_KEYSTORE_PASSWORD`, `ALQLAISI_ANDROID_KEY_ALIAS`, `ALQLAISI_ANDROID_KEY_PASSWORD`. Seller release signing variables: `ALQLAISI_SELLER_KEYSTORE_PATH`, `ALQLAISI_SELLER_KEYSTORE_PASSWORD`, `ALQLAISI_SELLER_KEY_ALIAS`, `ALQLAISI_SELLER_KEY_PASSWORD`. Keep these values and keystore files out of source control.
+
+The root and seller Android projects now include Gradle wrapper launchers and CI builds debug APKs. Debug build success checks native compilation only; it does not prove that Google OAuth credentials work or that a signed release is ready. Genuine Google sign-in still requires real OAuth clients and physical-device validation with the correct signing SHA-1.
 
 ## Operational safeguards and known boundaries
 
