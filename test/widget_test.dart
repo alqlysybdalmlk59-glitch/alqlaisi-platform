@@ -35,8 +35,25 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('مرحبًا بك في منصة القليسي'), findsOneWidget);
+    expect(find.text('متابعة باستخدام Google'), findsOneWidget);
     final loginContext = tester.element(find.text('مرحبًا بك في منصة القليسي'));
     expect(Localizations.localeOf(loginContext), const Locale('ar'));
     expect(MaterialLocalizations.of(loginContext), isNotNull);
   });
+  testWidgets('Google sign-in reports missing OAuth configuration clearly',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(const AlQulaisiApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('متابعة باستخدام Google'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'تسجيل Google غير مهيأ في هذا البناء. أعد بناء التطبيق باستخدام GOOGLE_SERVER_CLIENT_ID الصحيح.',
+      ),
+      findsOneWidget,
+    );
+  });
+
 }
