@@ -11,16 +11,9 @@ from typing import List
 import database
 import models
 from app.core.security import decode_access_token
+from routers.dependencies import get_db as secure_get_db, require_admin
 
 router = APIRouter(prefix="/api/users", tags=["Users (legacy; use /api/auth)"])
-
-
-def get_db():
-    db = database.SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 def _deprecated_auth_endpoint():
@@ -50,17 +43,9 @@ def google_login():
 
 @router.get("/", response_model=List[dict])
 def get_users(
-    authorization: str | None = Header(default=None),
-    db: Session = Depends(get_db),
+    _principal: dict = Depends(require_admin),
+    db: Session = Depends(secure_get_db),
 ):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="يتطلب عرض المستخدمين صلاحية مدير النظام.")
-    try:
-        payload = decode_access_token(authorization.split(" ", 1)[1])
-    except (ValueError, RuntimeError):
-        raise HTTPException(status_code=401, detail="رمز الدخول غير صالح أو منتهي الصلاحية.")
-    if payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="هذه الوظيفة مخصصة لمدير النظام.")
     return [
         {
             "id": str(user.id),
@@ -70,6 +55,7 @@ def get_users(
             "phone": user.phone,
             "address": user.address,
             "status": getattr(user, "status", "active"),
+            "store_id": getattr(user, "store_id", None),
         }
         for user in db.query(models.DBUser).all()
     ]

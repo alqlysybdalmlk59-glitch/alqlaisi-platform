@@ -192,7 +192,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (_error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(_error!, style: const TextStyle(color: Colors.red))),
       const SizedBox(height: 18), FilledButton(onPressed: _busy ? null : _submit, child: Text(_busy ? 'جارٍ التحقق...' : 'تسجيل الدخول')),
       const SizedBox(height: 10), Text('يجب اعتماد المتجر من الإدارة قبل إضافة المنتجات ونشرها.', style: Theme.of(context).textTheme.bodySmall, textAlign: TextAlign.center),
-    ]))))));
+    ])))))));
 
 class StoreApplicationScreen extends StatefulWidget {
   const StoreApplicationScreen({super.key, required this.user, required this.api, required this.token, required this.onApplied, required this.onLogout});
@@ -223,7 +223,7 @@ class _StoreApplicationScreenState extends State<StoreApplicationScreen> {
       const SizedBox(height:12),TextField(controller:_description,maxLines:3,decoration:const InputDecoration(labelText:'وصف المتجر')),
       if(_error!=null)Padding(padding:const EdgeInsets.only(top:12),child:Text(_error!,style:const TextStyle(color:Colors.red))),
       const SizedBox(height:16),FilledButton(onPressed:_busy?null:_apply,child:Text(_busy?'جارٍ إرسال الطلب...':'إرسال طلب اعتماد المتجر')),
-    ]))))));
+    ])))))));
 }
 
 class PendingStoreScreen extends StatelessWidget {
@@ -237,7 +237,7 @@ class PendingStoreScreen extends StatelessWidget {
       const SizedBox(height:10),Text('حالة الطلب: ${store['status']??'قيد المراجعة'}'),
       const SizedBox(height:8),const Text('ستظهر إدارة المنتجات والطلبات بعد اعتماد المتجر.',textAlign:TextAlign.center),
       const SizedBox(height:18),FilledButton.icon(onPressed:onRefresh,icon:const Icon(Icons.refresh),label:const Text('تحديث حالة الاعتماد')),
-    ]))))));
+    ])))))));
 }
 
 class SellerDashboard extends StatefulWidget {
@@ -254,7 +254,7 @@ class _SellerDashboardState extends State<SellerDashboard> {
     try{
       final products=await widget.api.products(widget.token,widget.store['id'].toString());
       final orders=await widget.api.orders(widget.token,widget.store['id'].toString());
-      if(mounted)setState(()=>{_products=products,_orders=orders,_error=null});
+      if (mounted) setState(() { _products = products; _orders = orders; _error = null; });
     }catch(e){if(mounted)setState(()=>_error=e is ApiFailure?e.message:'تعذر تحميل بيانات المتجر.');}
     finally{if(mounted)setState(()=>_busy=false);}
   }

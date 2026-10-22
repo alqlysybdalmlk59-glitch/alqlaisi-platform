@@ -23,7 +23,7 @@ A green CI run means the checks in that workflow passed; it is not proof that ev
 
 1. Google OAuth must be configured with `GOOGLE_CLIENT_ID`, Android package name and signing SHA-1, then tested on a device. Automated tests only check fail-closed behavior when not configured.
 2. Forgot-password deliberately returns 501 because there is no verified SMS/email recovery channel with expiry/rate limiting.
-3. Dedicated seller Flutter app and admin web dashboard need complete screens and build checks; the customer app is not a substitute for those applications.
+3. Dedicated seller Flutter app and admin web dashboard have initial functional screens in this branch. CI is being expanded to analyze the seller app and syntax-check the dashboard; real end-to-end testing is still required.
 4. Internal delivery needs its own operations board, employee/courier assignment, task history and audit trail; admin can change order status but there is no dispatch workflow yet.
 5. Version 1 payment remains cash on delivery. No online payments or transfers are implemented.
 6. Commission percentage and settlement policy remain undecided. No real financial transfers are implemented.
@@ -32,7 +32,7 @@ A green CI run means the checks in that workflow passed; it is not proof that ev
 9. Before production, set a strong JWT secret, explicit CORS origins, HTTPS, auth/checkout rate limiting, audit logging and backup/restore procedures.
 10. Reconcile legacy store rows with null `owner_user_id` and resolve duplicated/inaccurate mappings through admin review.
 11. `/api/ai/sales-insights` is still a placeholder and is not connected to actual analytics.
-12. Current CI compiles Python, runs security/auth tests, and analyzes the customer Flutter app; it does not replace device/browser end-to-end tests or deployment verification.
+12. Current CI compiles Python, runs security/auth tests, analyzes the customer Flutter app and seller app, and syntax-checks the admin dashboard JavaScript; it does not replace device/browser end-to-end tests or deployment verification.
 
 ## Acceptance gates
 

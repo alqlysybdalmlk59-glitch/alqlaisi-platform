@@ -19,7 +19,13 @@ class _ProfilePageState extends State<ProfilePage>{
     try{
       final user=await _api.get('/auth/me',token:widget.token);
       final store=await _api.get('/vendors/mine',token:widget.token);
-      if(mounted)setState(()=>{_user=Map<String,dynamic>.from(user as Map),_store:store is Map?Map<String,dynamic>.from(store):null,_error=null});
+      if (mounted) {
+        setState(() {
+          _user = Map<String, dynamic>.from(user as Map);
+          _store = store is Map ? Map<String, dynamic>.from(store) : null;
+          _error = null;
+        });
+      }
     }on ApiException catch(e){if(mounted)setState(()=>_error=e.message);}
     catch(_){if(mounted)setState(()=>_error='تعذر تحميل الملف الشخصي.');}
     finally{if(mounted)setState(()=>_loading=false);}

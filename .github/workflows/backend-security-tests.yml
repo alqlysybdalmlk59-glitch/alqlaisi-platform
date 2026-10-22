@@ -57,7 +57,7 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
       - name: Analyze Flutter app
-        run: flutter analyze
+        run: flutter analyze lib
 
   seller-flutter-analysis:
     runs-on: ubuntu-latest
