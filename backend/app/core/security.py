@@ -1,24 +1,32 @@
 import os
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 import jwt
+from dotenv import load_dotenv
 from jwt import InvalidTokenError
 from pwdlib import PasswordHash
 
-# No source-code fallback: configure JWT_SECRET_KEY in backend/.env.
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
-if len(SECRET_KEY) < 32:
-    raise RuntimeError(
-        "JWT_SECRET_KEY must be configured with at least 32 characters "
-        "in the backend environment."
-    )
+# Load the repository's local .env without requiring the caller's working directory.
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+load_dotenv(_REPOSITORY_ROOT / ".env")
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(
     os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
 )
 _password_hash = PasswordHash.recommended()
+
+
+def _secret_key() -> str:
+    secret = os.getenv("JWT_SECRET_KEY", "")
+    if len(secret) < 32:
+        raise RuntimeError(
+            "JWT_SECRET_KEY is missing or too short. Copy .env.example to .env "
+            "and set a unique random secret of at least 32 characters."
+        )
+    return secret
 
 
 def hash_password(password: str) -> str:
@@ -50,12 +58,12 @@ def create_access_token(
         else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     to_encode["exp"] = expires_at
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(to_encode, _secret_key(), algorithm=ALGORITHM)
 
 
 def decode_access_token(token: str) -> dict[str, Any]:
     """Decode a JWT; raise ValueError for malformed, invalid, or expired tokens."""
     try:
-        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return jwt.decode(token, _secret_key(), algorithms=[ALGORITHM])
     except (InvalidTokenError, TypeError, ValueError) as exc:
         raise ValueError("Invalid or expired access token.") from exc
