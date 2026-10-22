@@ -1,29 +1,39 @@
-# Flutter / Dart
-.dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.packages
-.pub-cache/
-.pub/
-build/
+# Environment secrets
+.env
+.env.*
+!.env.example
 
-# Python / FastAPI
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-ENV/
 .venv/
-*.db
-*.sqlite3
+venv/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 
-# Android / Gradle
+# Flutter / Dart
+.dart_tool/
+.packages
+.pub-cache/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Gradle & Local properties
 .gradle/
 local.properties
+
+# IDE
 .idea/
+.vscode/
 *.iml
+
+# Logs
+*.log
+
+# OS
 .DS_Store
-.env
+Thumbs.db
+desktop.ini

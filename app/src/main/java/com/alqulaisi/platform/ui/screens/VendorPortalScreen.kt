@@ -10,9 +10,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.alqulaisi.platform.data.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -33,7 +36,7 @@ fun VendorPortalScreen(onLogout: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(when(selectedTab) { 0 -> "منتجات المتجر"; 1 -> "طلبات المتجر الواردة"; else -> "تقارير المبيعات والدعم" }) },
+                title = { Text(when(selectedTab) { 0 -> "لوحة تحكم البائع"; 1 -> "إدارة المنتجات"; 2 -> "طلبات المتجر" else -> "المبيعات والتقارير" }) },
                 actions = {
                     IconButton(onClick = onLogout) {
                         Icon(Icons.Default.ExitToApp, contentDescription = "تسجيل خروج")
@@ -46,27 +49,33 @@ fun VendorPortalScreen(onLogout: () -> Unit) {
                 NavigationBarItem(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    icon = { Icon(Icons.Default.Inventory, contentDescription = null) },
-                    label = { Text("المنتجات") }
+                    icon = { Icon(Icons.Default.Dashboard, contentDescription = null) },
+                    label = { Text("الرئيسية") }
                 )
                 NavigationBarItem(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    icon = { Icon(Icons.Default.Assignment, contentDescription = null) },
-                    label = { Text("الطلبات") }
+                    icon = { Icon(Icons.Default.Inventory, contentDescription = null) },
+                    label = { Text("المنتجات") }
                 )
                 NavigationBarItem(
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 },
+                    icon = { Icon(Icons.Default.Assignment, contentDescription = null) },
+                    label = { Text("الطلبات") }
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
                     icon = { Icon(Icons.Default.BarChart, contentDescription = null) },
                     label = { Text("المبيعات") }
                 )
             }
         },
         floatingActionButton = {
-            if (selectedTab == 0 && myVendorStore?.status == "مفعل") {
+            if (myVendorStore?.status == "مفعل") {
                 FloatingActionButton(onClick = { showAddProductDialog = true }) {
-                    Icon(Icons.Default.Add, contentDescription = "إضافة منتج")
+                    Icon(Icons.Default.Add, contentDescription = "إضافة منتج جديد")
                 }
             }
         }
@@ -80,21 +89,22 @@ fun VendorPortalScreen(onLogout: () -> Unit) {
                             Spacer(modifier = Modifier.height(16.dp))
                             Text("حالة المتجر: ${myVendorStore?.status ?: "قيد المراجعة"}", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text("طلب فتح المتجر قيد المراجعة من قبل إدارة منصة القليسي. ستتمكن من إضافة وتعديل المنتجات فور الموافقة.", fontSize = 14.sp)
+                            Text("طلب فتح المتجر قيد المراجعة من قبل إدارة منصة القليسي. ستتمكن من إدارة المنتجات والمبيعات فور اعتماد المتجر.", fontSize = 14.sp)
                         }
                     }
                 }
             } else {
                 when (selectedTab) {
-                    0 -> VendorProductsView(
+                    0 -> VendorDashboardOverview(myOrders, myProducts)
+                    1 -> VendorProductsView(
                         products = myProducts,
                         onToggleAvailability = { EcommerceRepository.toggleProductAvailability(it) }
                     )
-                    1 -> VendorOrdersView(
+                    2 -> VendorOrdersView(
                         orders = myOrders,
                         onUpdateStatus = { orderId, status -> EcommerceRepository.updateOrderStatus(orderId, status) }
                     )
-                    2 -> VendorSalesReportView(myOrders)
+                    3 -> VendorSalesReportView(myOrders)
                 }
             }
 
@@ -107,7 +117,7 @@ fun VendorPortalScreen(onLogout: () -> Unit) {
                         price = price.toDoubleOrNull() ?: 50.0,
                         imageUrl = "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500",
                         vendorId = "v1",
-                        vendorName = myVendorStore?.storeName ?: "متجر التقنية",
+                        vendorName = myVendorStore?.storeName ?: "متجر البائع",
                         category = category,
                         isAvailable = true,
                         reviewStatus = ProductReviewStatus.PENDING_REVIEW
@@ -121,35 +131,95 @@ fun VendorPortalScreen(onLogout: () -> Unit) {
 }
 
 @Composable
+fun VendorDashboardOverview(orders: List<Order>, products: List<Product>) {
+    val totalRevenue = orders.sumOf { it.totalPrice }
+    val totalOrders = orders.size
+    val publishedCount = products.count { it.reviewStatus == ProductReviewStatus.PUBLISHED }
+    val pendingCount = products.count { it.reviewStatus == ProductReviewStatus.PENDING_REVIEW }
+
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item {
+            Text("نظرة عامة على المتجر", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Card(modifier = Modifier.weight(1f)) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("إجمالي المبيعات", fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
+                        Text("$totalRevenue ر.ي", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Card(modifier = Modifier.weight(1f)) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("إجمالي الطلبات", fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
+                        Text("$totalOrders", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Card(modifier = Modifier.weight(1f)) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("منتجات منشورة", fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
+                        Text("$publishedCount", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Card(modifier = Modifier.weight(1f)) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("بانتظار المراجعة", fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
+                        Text("$pendingCount", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+        }
+
+        item {
+            Text("الطلبات الأخيرة", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        }
+
+        items(orders) { order ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("طلب رقم: ${order.id}", fontWeight = FontWeight.Bold)
+                        Text(order.status, color = MaterialTheme.colorScheme.primary)
+                    }
+                    Text("العميل: ${order.clientName} | المبلغ: ${order.totalPrice} ر.ي", fontSize = 13.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun VendorProductsView(products: List<Product>, onToggleAvailability: (String) -> Unit) {
-    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item {
+            Text("إدارة منتجات المتجر", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        }
         items(products) { product ->
             Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text(product.title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    AsyncImage(
+                        model = product.imageUrl,
+                        contentDescription = null,
+                        modifier = Modifier.size(70.dp).clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(product.title, fontWeight = FontWeight.Bold)
+                        Text("السعر: ${product.price} ر.ي", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                        Text("حالة المراجعة: ${product.reviewStatus.name}", fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
                         Text(
-                            text = when(product.reviewStatus) {
-                                ProductReviewStatus.PUBLISHED -> "منشور"
-                                ProductReviewStatus.PENDING_REVIEW -> "قيد المراجعة الإدارية"
-                                ProductReviewStatus.REJECTED -> "مرفوض"
-                                ProductReviewStatus.DRAFT -> "مسودة"
-                            },
+                            text = if (product.isAvailable) "الحالة: متاح" else "الحالة: غير متاح مؤقتاً",
                             fontSize = 12.sp,
-                            color = if (product.reviewStatus == ProductReviewStatus.PUBLISHED) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                            fontWeight = FontWeight.Bold
+                            color = if (product.isAvailable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                         )
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("السعر: ${product.price} ر.ي | التصنيف: ${product.category}", fontSize = 14.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text("حالة التوفر اليدوي:")
-                        Switch(
-                            checked = product.isAvailable,
-                            onCheckedChange = { onToggleAvailability(product.id) }
-                        )
-                    }
+                    Switch(
+                        checked = product.isAvailable,
+                        onCheckedChange = { onToggleAvailability(product.id) }
+                    )
                 }
             }
         }
@@ -158,26 +228,28 @@ fun VendorProductsView(products: List<Product>, onToggleAvailability: (String) -
 
 @Composable
 fun VendorOrdersView(orders: List<Order>, onUpdateStatus: (String, String) -> Unit) {
-    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item {
+            Text("طلبات المتجر الواردة", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        }
         items(orders) { order ->
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("طلب #: ${order.id}", fontWeight = FontWeight.Bold)
-                    Text("العميل: ${order.clientName}")
-                    Text("المبلغ المطلوب: ${order.itemsPrice} ر.ي")
-                    Text("الحالة الحالية: ${order.status}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("رقم الطلب: ${order.id}", fontWeight = FontWeight.Bold)
+                        Text(order.status, color = MaterialTheme.colorScheme.primary)
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
-
+                    Text("العميل: ${order.clientName}")
+                    Text("العنوان: ${order.address}")
+                    Text("الإجمالي: ${order.totalPrice} ر.ي")
+                    Spacer(modifier = Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (order.status == "بانتظار القبول") {
-                            Button(onClick = { onUpdateStatus(order.id, "مقبولة وقيد التجهيز") }) {
-                                Text("قبول الطلب وتجهيزه")
-                            }
+                        Button(onClick = { onUpdateStatus(order.id, "مبتقولة وقيد التجهيز") }) {
+                            Text("قبول وتجهيز")
                         }
-                        if (order.status == "مقبولة وقيد التجهيز") {
-                            Button(onClick = { onUpdateStatus(order.id, "للتوصيل") }) {
-                                Text("تسليم موظف التوصيل")
-                            }
+                        OutlinedButton(onClick = { onUpdateStatus(order.id, "للتوصيل") }) {
+                            Text("جاهز للتوصيل الداخلي")
                         }
                     }
                 }
@@ -188,23 +260,19 @@ fun VendorOrdersView(orders: List<Order>, onUpdateStatus: (String, String) -> Un
 
 @Composable
 fun VendorSalesReportView(orders: List<Order>) {
-    val completedOrders = orders.filter { it.status == "تم الاستلام" }
-    val totalSales = completedOrders.sumOf { it.itemsPrice }
+    val totalSales = orders.sumOf { it.totalPrice }
+    val completedCount = orders.count { it.status == "تم الاستلام" }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text("تقارير المبيعات والأرباح", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Spacer(modifier = Modifier.height(16.dp))
         Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("إجمالي قيمة المبيعات المكتملة", fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("$totalSales ر.ي", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            }
-        }
-
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("عدد الطلبات المكتملة", fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("${completedOrders.size} طلبات", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text("إجمالي المبيعات المحققة", color = MaterialTheme.colorScheme.secondary)
+                Text("$totalSales ر.ي", fontWeight = FontWeight.Bold, fontSize = 24.sp, color = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("الطلبات المكتملة: $completedCount")
+                Text("العمولات: (حسب سياسة المنصة)")
             }
         }
     }
@@ -214,23 +282,23 @@ fun VendorSalesReportView(orders: List<Order>) {
 fun AddProductDialog(onDismiss: () -> Unit, onAdd: (String, String, String, String) -> Unit) {
     var title by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
-    var desc by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("إلكترونيات") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("إضافة منتج جديد للمراجعة") },
+        title = { Text("إضافة منتج جديد للمتجر", fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("اسم المنتج") })
-                OutlinedTextField(value = price, onValueChange = { price = it }, label = { Text("السعر (ر.ي)") })
-                OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text("الوصف التفصيلي") })
-                OutlinedTextField(value = category, onValueChange = { category = it }, label = { Text("التصنيف") })
+                OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("اسم المنتج") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = price, onValueChange = { price = it }, label = { Text("السعر بالريال") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("وصف المنتج ومواصفاته") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = category, onValueChange = { category = it }, label = { Text("التصنيف") }, modifier = Modifier.fillMaxWidth())
             }
         },
         confirmButton = {
-            Button(onClick = { if (title.isNotBlank() && price.isNotBlank()) onAdd(title, price, desc, category) }) {
-                Text("إرسال للمراجعة")
+            Button(onClick = { if (title.isNotBlank() && price.isNotBlank()) onAdd(title, price, description, category) }) {
+                Text("إرسال للمراجعة والإضافة")
             }
         },
         dismissButton = {

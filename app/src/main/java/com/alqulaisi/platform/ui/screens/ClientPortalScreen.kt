@@ -35,8 +35,17 @@ fun ClientPortalScreen(onLogout: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(when(selectedTab) { 0 -> "متجر القليسي"; 1 -> "سلة التسوق"; 2 -> "طلباتي"; else -> "حسابي والدعم" }) },
+                title = { 
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("منصة القليسي", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    }
+                },
                 actions = {
+                    IconButton(onClick = { /* Notifications */ }) {
+                        BadgedBox(badge = { Badge { Text("2") } }) {
+                            Icon(Icons.Default.Notifications, contentDescription = "الإشعارات")
+                        }
+                    }
                     IconButton(onClick = onLogout) {
                         Icon(Icons.Default.ExitToApp, contentDescription = "تسجيل خروج")
                     }
@@ -48,12 +57,24 @@ fun ClientPortalScreen(onLogout: () -> Unit) {
                 NavigationBarItem(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    icon = { Icon(Icons.Default.Store, contentDescription = null) },
-                    label = { Text("المتجر") }
+                    icon = { Icon(Icons.Default.Home, contentDescription = null) },
+                    label = { Text("الرئيسية") }
                 )
                 NavigationBarItem(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
+                    icon = { Icon(Icons.Default.Category, contentDescription = null) },
+                    label = { Text("الفئات") }
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    icon = { Icon(Icons.Default.Explore, contentDescription = null) },
+                    label = { Text("استكشاف") }
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
                     icon = {
                         BadgedBox(badge = { if (cart.isNotEmpty()) Badge { Text("${cart.sumOf { it.quantity }}") } }) {
                             Icon(Icons.Default.ShoppingCart, contentDescription = null)
@@ -62,14 +83,8 @@ fun ClientPortalScreen(onLogout: () -> Unit) {
                     label = { Text("السلة") }
                 )
                 NavigationBarItem(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    icon = { Icon(Icons.Default.ListAlt, contentDescription = null) },
-                    label = { Text("الطلبات") }
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 3,
-                    onClick = { selectedTab = 3 },
+                    selected = selectedTab == 4,
+                    onClick = { selectedTab = 4 },
                     icon = { Icon(Icons.Default.Person, contentDescription = null) },
                     label = { Text("حسابي") }
                 )
@@ -78,7 +93,7 @@ fun ClientPortalScreen(onLogout: () -> Unit) {
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
             when (selectedTab) {
-                0 -> ClientStoreCatalogView(
+                0, 2 -> ClientStoreCatalogView(
                     products = publishedProducts,
                     onProductClick = { selectedProductForDetail = it },
                     onAddToCart = { product ->
@@ -90,7 +105,11 @@ fun ClientPortalScreen(onLogout: () -> Unit) {
                         }
                     }
                 )
-                1 -> CartView(
+                1 -> CategoriesGridView(
+                    products = publishedProducts,
+                    onProductClick = { selectedProductForDetail = it }
+                )
+                3 -> CartView(
                     cart = cart,
                     onRemove = { EcommerceRepository.removeFromCart(it) },
                     onCheckout = {
@@ -101,8 +120,7 @@ fun ClientPortalScreen(onLogout: () -> Unit) {
                         }
                     }
                 )
-                2 -> OrdersView(orders.filter { it.clientId == currentUser?.id })
-                3 -> ClientProfileView(currentUser)
+                4 -> ClientProfileView(currentUser)
             }
 
             selectedProductForDetail?.let { product ->
@@ -135,7 +153,7 @@ fun ClientStoreCatalogView(
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("الكل") }
-    val categories = listOf("الكل", "إلكترونيات", "أزياء", "صحة وجمال")
+    val categories = listOf("الكل", "أجهزة الكمبيوتر", "ملابس", "إلكترونيات", "الصحة والجمال", "مجوهرات ومشاهدة")
 
     val filteredProducts = products.filter { product ->
         val matchesSearch = product.title.contains(searchQuery, ignoreCase = true) || product.vendorName.contains(searchQuery, ignoreCase = true)
@@ -143,64 +161,122 @@ fun ClientStoreCatalogView(
         matchesSearch && matchesCategory
     }
 
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("أنا أتسوق لـ...") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            )
+        }
+
+        // Promotional Banner Carousel
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth().height(150.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+            ) {
+                Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.CenterStart) {
+                    Column {
+                        Text("خصومات كبرى تصل إلى 25% حصرياً", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("تسوق الآن أحدث المنتجات والقرطاسية المدرسية والأجهزة", fontSize = 13.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+                    }
+                }
+            }
+        }
+
+        // Featured Categories
+        item {
+            Text("الفئات المميزة", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Spacer(modifier = Modifier.height(8.dp))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(categories) { cat ->
+                    FilterChip(
+                        selected = selectedCategory == cat,
+                        onClick = { selectedCategory = cat },
+                        label = { Text(cat) }
+                    )
+                }
+            }
+        }
+
+        item {
+            Text("المنتجات المتاحة", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        }
+
+        items(filteredProducts) { product ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                onClick = { onProductClick(product) }
+            ) {
+                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    AsyncImage(
+                        model = product.imageUrl,
+                        contentDescription = null,
+                        modifier = Modifier.size(80.dp).clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(product.title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text("المتجر: ${product.vendorName}", fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("${product.price} ر.ي", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (product.isAvailable) "متاح" else "غير متاح مؤقتاً",
+                                fontSize = 11.sp,
+                                color = if (product.isAvailable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = { onAddToCart(product) },
+                        enabled = product.isAvailable
+                    ) {
+                        Icon(Icons.Default.AddShoppingCart, contentDescription = null, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CategoriesGridView(products: List<Product>, onProductClick: (Product) -> Unit) {
+    val categories = listOf("أجهزة الكمبيوتر", "ملابس", "إلكترونيات", "الصحة والجمال", "مجوهرات ومشاهدة")
+    var selectedCat by remember { mutableStateOf(categories.first()) }
+    val catProducts = products.filter { it.category == selectedCat || selectedCat.isEmpty() }
+
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            placeholder = { Text("ابحث عن منتج أو متجر...") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp)
-        )
-
+        Text("استعراض التصنيفات", fontWeight = FontWeight.Bold, fontSize = 18.sp)
         Spacer(modifier = Modifier.height(12.dp))
-
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(categories) { cat ->
                 FilterChip(
-                    selected = selectedCategory == cat,
-                    onClick = { selectedCategory = cat },
+                    selected = selectedCat == cat,
+                    onClick = { selectedCat = cat },
                     label = { Text(cat) }
                 )
             }
         }
-
         Spacer(modifier = Modifier.height(16.dp))
-
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            items(filteredProducts) { product ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    onClick = { onProductClick(product) }
-                ) {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(catProducts) { product ->
+                Card(modifier = Modifier.fillMaxWidth(), onClick = { onProductClick(product) }) {
                     Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        AsyncImage(
-                            model = product.imageUrl,
-                            contentDescription = null,
-                            modifier = Modifier.size(80.dp).clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop
-                        )
-                        Spacer(modifier = Modifier.width(16.dp))
+                        AsyncImage(model = product.imageUrl, contentDescription = null, modifier = Modifier.size(60.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
+                        Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(product.title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Text("المتجر: ${product.vendorName}", fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("${product.price} ر.ي", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = if (product.isAvailable) "متاح" else "غير متاح مؤقتاً",
-                                    fontSize = 11.sp,
-                                    color = if (product.isAvailable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                                )
-                            }
-                        }
-                        Button(
-                            onClick = { onAddToCart(product) },
-                            enabled = product.isAvailable
-                        ) {
-                            Icon(Icons.Default.AddShoppingCart, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text(product.title, fontWeight = FontWeight.Bold)
+                            Text("${product.price} ر.ي", color = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
@@ -297,36 +373,10 @@ fun CartView(cart: List<CartItem>, onRemove: (String) -> Unit, onCheckout: () ->
                         Text("${totalItemsPrice + totalDeliveryFee} ر.ي", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 18.sp)
                     }
                     Text("طريقة الدفع: الدفع عند الاستلام", fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(top = 4.dp))
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-            Button(
-                onClick = onCheckout,
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text("تأكيد الطلب والدفع عند الاستلام", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-}
-
-@Composable
-fun OrdersView(orders: List<Order>) {
-    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        items(orders) { order ->
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("طلب #: ${order.id}", fontWeight = FontWeight.Bold)
-                        Text(order.status, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(onClick = onCheckout, modifier = Modifier.fillMaxWidth()) {
+                        Text("تأكيد الطلب وإرساله")
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("المتجر: ${order.vendorName}", fontSize = 13.sp)
-                    Text("العنوان: ${order.address}", fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("الإجمالي: ${order.totalPrice} ر.ي (${order.paymentMethod})", fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -334,59 +384,18 @@ fun OrdersView(orders: List<Order>) {
 }
 
 @Composable
-fun ClientProfileView(user: User?) {
-    var ticketSubject by remember { mutableStateOf("") }
-    var ticketDetails by remember { mutableStateOf("") }
-    var showSupportDialog by remember { mutableStateOf(false) }
-
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+fun ClientProfileView(currentUser: User?) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("الملف الشخصي", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(currentUser?.name ?: "مستخدم", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text(currentUser?.email ?: "", color = MaterialTheme.colorScheme.secondary)
+                Text("الهاتف: ${currentUser?.phone}", fontSize = 14.sp)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("الاسم: ${user?.name}")
-                Text("البريد: ${user?.email}")
-                Text("الهاتف: ${user?.phone}")
-                Text("العنوان الافتراضي: ${user?.address}")
+                Text("العنوان: ${currentUser?.address}", fontSize = 14.sp)
             }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Button(
-            onClick = { showSupportDialog = true },
-            modifier = Modifier.fillMaxWidth().height(50.dp),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Icon(Icons.Default.SupportAgent, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("تقديم طلب دعم أو شكوى")
-        }
-
-        if (showSupportDialog) {
-            AlertDialog(
-                onDismissRequest = { showSupportDialog = false },
-                title = { Text("تقديم طلب دعم") },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(value = ticketSubject, onValueChange = { ticketSubject = it }, label = { Text("عنوان الشكوى أو الطلب") })
-                        OutlinedTextField(value = ticketDetails, onValueChange = { ticketDetails = it }, label = { Text("التفاصيل") })
-                    }
-                },
-                confirmButton = {
-                    Button(onClick = {
-                        if (ticketSubject.isNotBlank()) {
-                            EcommerceRepository.addSupportTicket(ticketSubject, ticketDetails)
-                            showSupportDialog = false
-                        }
-                    }) {
-                        Text("إرسال")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showSupportDialog = false }) { Text("إلغاء") }
-                }
-            )
         }
     }
 }
