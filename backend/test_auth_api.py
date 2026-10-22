@@ -224,6 +224,93 @@ class TestAuthAPI(unittest.TestCase):
             self.assertEqual(saved.owner_user_id, user_id)
             self.assertEqual(saved.store_name, "متجر بعد التعديل")
 
+    def test_google_login_creates_and_reuses_verified_subject(self):
+        claims = {
+            "sub": "google-subject-test-001",
+            "email": "verified.customer@example.com",
+            "email_verified": True,
+            "name": "Google Customer",
+        }
+        with patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "test-web-client-id"}), patch.object(
+            auth.google_id_token, "verify_oauth2_token", return_value=claims
+        ):
+            first = self.client.post("/auth/google", json={"id_token": "mocked-google-id-token-123"})
+            self.assertEqual(first.status_code, 200, first.text)
+            second = self.client.post("/auth/google", json={"id_token": "mocked-google-id-token-123"})
+            self.assertEqual(second.status_code, 200, second.text)
+
+        self.assertEqual(first.json()["user"]["id"], second.json()["user"]["id"])
+        self.assertEqual(first.json()["user"]["role"], "customer")
+        with self.TestSession() as db:
+            users = db.query(models.DBUser).filter_by(email="verified.customer@example.com").all()
+            self.assertEqual(len(users), 1)
+            self.assertEqual(users[0].google_subject, "google-subject-test-001")
+
+    def test_google_login_links_existing_customer_email_once(self):
+        registered = self.client.post("/auth/register", json={
+            "full_name": "عميل موجود",
+            "phone": "777123488",
+            "email": "linked.customer@example.com",
+            "password": "SecurePass123",
+        })
+        self.assertEqual(registered.status_code, 201, registered.text)
+        original_id = registered.json()["user"]["id"]
+        claims = {
+            "sub": "google-subject-link-002",
+            "email": "linked.customer@example.com",
+            "email_verified": True,
+            "name": "Google Linked Customer",
+        }
+        with patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "test-web-client-id"}), patch.object(
+            auth.google_id_token, "verify_oauth2_token", return_value=claims
+        ):
+            first = self.client.post("/auth/google", json={"id_token": "mocked-google-id-token-456"})
+            self.assertEqual(first.status_code, 200, first.text)
+            self.assertEqual(first.json()["user"]["id"], original_id)
+            conflict_claims = {**claims, "sub": "different-google-subject"}
+            with patch.object(auth.google_id_token, "verify_oauth2_token", return_value=conflict_claims):
+                conflict = self.client.post("/auth/google", json={"id_token": "mocked-google-id-token-789"})
+                self.assertEqual(conflict.status_code, 409, conflict.text)
+
+        with self.TestSession() as db:
+            account = db.query(models.DBUser).filter_by(id=original_id).first()
+            self.assertEqual(account.google_subject, "google-subject-link-002")
+
+    def test_google_login_rejects_unverified_email_and_invalid_token(self):
+        unverified = {
+            "sub": "google-unverified-subject",
+            "email": "unverified@example.com",
+            "email_verified": False,
+            "name": "Unverified",
+        }
+        with patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "test-web-client-id"}):
+            with patch.object(auth.google_id_token, "verify_oauth2_token", return_value=unverified):
+                response = self.client.post("/auth/google", json={"id_token": "mocked-unverified-token"})
+                self.assertEqual(response.status_code, 401, response.text)
+            with patch.object(auth.google_id_token, "verify_oauth2_token", side_effect=ValueError("bad signature")):
+                response = self.client.post("/auth/google", json={"id_token": "mocked-bad-token"})
+                self.assertEqual(response.status_code, 401, response.text)
+
+    def test_google_login_cannot_turn_admin_email_into_customer_session(self):
+        with self.TestSession() as db:
+            db.add(models.DBUser(
+                id="google_test_admin", name="مدير", email="admin.google@example.com",
+                role="ADMIN", phone="700000001", address="", password_hash=None,
+                status="active", google_subject=None,
+            ))
+            db.commit()
+        claims = {
+            "sub": "admin-google-subject",
+            "email": "admin.google@example.com",
+            "email_verified": True,
+            "name": "Admin",
+        }
+        with patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "test-web-client-id"}), patch.object(
+            auth.google_id_token, "verify_oauth2_token", return_value=claims
+        ):
+            response = self.client.post("/auth/google", json={"id_token": "mocked-admin-token"})
+        self.assertEqual(response.status_code, 403, response.text)
+
     def test_google_login_fails_closed_when_not_configured(self):
         import os
         previous = os.environ.pop("GOOGLE_CLIENT_ID", None)

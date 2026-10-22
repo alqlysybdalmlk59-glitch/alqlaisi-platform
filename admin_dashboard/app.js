@@ -113,15 +113,33 @@
     const list = [];
     state.vendors.forEach(store => {
       const actions = [];
-      if (store.status !== "مفعل") {
+      if (!store.owner_user_id) {
+        actions.push(action("ربط حساب المالك", "secondary", async () => {
+          const userId = prompt("أدخل معرّف حساب العميل الذي تحققتم من ملكيته للمتجر:");
+          if (userId === null || !userId.trim()) return;
+          await api("/vendors/" + encodeURIComponent(store.id) + "/owner", {
+            method: "PUT",
+            body: {user_id: userId.trim()}
+          });
+          notify("تم ربط حساب المالك. راجع هوية الحساب قبل اعتماد المتجر.");
+          await refreshData();
+        }));
+      }
+      if (store.status !== "مفعل" && store.owner_user_id) {
         actions.push(action("اعتماد المتجر", "primary", async () => {
           await api("/vendors/" + encodeURIComponent(store.id) + "/approve", {method:"PUT"});
           notify("تم اعتماد المتجر وربط الحساب.");
           await refreshData();
         }));
-        actions.push(action("رفض", "danger", async () => {
+      }
+      if (store.status !== "مرفوض") {
+        actions.push(action(store.status === "مفعل" ? "إيقاف المتجر" : "رفض طلب المتجر", "danger", async () => {
+          const confirmed = window.confirm(store.status === "مفعل"
+            ? "سيؤدي ذلك إلى إيقاف ظهور منتجات المتجر ومنع الشراء منها. هل تتابع؟"
+            : "هل تريد رفض طلب المتجر؟");
+          if (!confirmed) return;
           await api("/vendors/" + encodeURIComponent(store.id) + "/reject", {method:"PUT"});
-          notify("تم رفض طلب المتجر.");
+          notify("تم تحديث حالة المتجر.");
           await refreshData();
         }));
       }
@@ -136,7 +154,13 @@
         await refreshData();
       });
       const fee = element("div", "inline-field"); fee.append(feeInput, feeSave);
-      list.push(record(store.store_name, ["المالك: " + (store.owner_name || "—"), "الهاتف: " + (store.phone || "—"), "المعرف: " + store.id], store.status, actions.concat([fee])));
+      list.push(record(store.store_name, [
+        "اسم المالك: " + (store.owner_name || "—"),
+        "حساب المالك: " + (store.owner_user_id || "غير مربوط — يلزم التحقق والربط"),
+        "الهاتف: " + (store.phone || "—"),
+        "رسوم التوصيل: " + (store.delivery_fee ?? 15) + " ريال",
+        "معرف المتجر: " + store.id
+      ], store.status, actions.concat([fee])));
     });
     wrap.append(toolbar, listOrEmpty(list, "لا توجد متاجر مسجلة حتى الآن."));
     setContent(wrap);
@@ -200,9 +224,49 @@
     setContent(wrap);
   }
   function renderUsers() {
-    const rows = state.users.map(user => record(user.name || user.full_name || user.id,
-      ["الهاتف: " + (user.phone || "—"), "البريد: " + (user.email || "—"), "الدور: " + (user.role || "—"), "المعرف: " + user.id],
-      user.status || user.role, []));
+    const rows = state.users.map(user => {
+      const actions = [];
+      const role = String(user.role || "").toUpperCase();
+      const status = String(user.status || "active");
+      const isCurrentAdmin = role === "ADMIN" && state.user &&
+        String(state.user.id) === String(user.id);
+
+      if (!isCurrentAdmin) {
+        const nextStatus = status === "suspended" ? "active" : "suspended";
+        actions.push(action(
+          nextStatus === "active" ? "إعادة تفعيل الحساب" : "إيقاف الحساب",
+          nextStatus === "active" ? "secondary" : "danger",
+          async () => {
+            const confirmed = window.confirm(
+              nextStatus === "suspended"
+                ? "سيُمنع هذا الحساب من استخدام عمليات المنصة. هل تريد إيقافه؟"
+                : "هل تريد إعادة تفعيل هذا الحساب؟"
+            );
+            if (!confirmed) return;
+            await api("/users/" + encodeURIComponent(user.id) + "/status", {
+              method: "PUT",
+              body: {status: nextStatus}
+            });
+            notify(nextStatus === "active" ? "تم تفعيل الحساب." : "تم إيقاف الحساب.");
+            await refreshData();
+          }
+        ));
+      }
+
+      return record(
+        user.name || user.full_name || user.id,
+        [
+          "الهاتف: " + (user.phone || "—"),
+          "البريد: " + (user.email || "—"),
+          "الدور: " + (user.role || "—"),
+          "حالة الحساب: " + status,
+          "المتجر المرتبط: " + (user.store_id || "—"),
+          "المعرف: " + user.id
+        ],
+        status,
+        actions
+      );
+    });
     setContent(listOrEmpty(rows, "لا توجد حسابات لعرضها أو أن مسار المستخدمين غير متاح لهذا الحساب."));
   }
   function renderSupport() {

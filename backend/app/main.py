@@ -22,7 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.core.runtime_config import (IS_PRODUCTION, CORS_ORIGINS, ALLOWED_HOSTS, validate_production_configuration, validate_production_database_schema)
 from routers import auth, orders, products, support, users, vendors
-from routers.dependencies import get_db, require_customer
+from routers.dependencies import get_db, require_admin, require_customer
 from schemas import CheckoutRequest, OrderSchema
 from typing import List
 
@@ -105,7 +105,7 @@ def versioned_health_check():
 
 
 @app.post("/api/ai/sales-insights")
-def get_ai_sales_insights(_principal: dict = Depends(__import__("routers.dependencies", fromlist=["require_admin"]).require_admin)):
+def get_ai_sales_insights(_principal: dict = Depends(require_admin)):
     from fastapi.responses import JSONResponse
     return JSONResponse(
         status_code=501,
