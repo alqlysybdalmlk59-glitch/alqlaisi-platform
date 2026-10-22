@@ -9,7 +9,7 @@ A green CI run means the checks in that workflow passed; it is not proof that ev
 
 - Unauthenticated business routes: orders, vendor management, product management, and support use database-backed authentication and role dependencies.
 - Role trust: protected requests reload the account and role from the database; inactive/suspended accounts are denied.
-- Google account identity: the backend stores and uniquely indexes the verified Google `sub`, links a verified email account only when it has no Google subject, and rejects attempts to rebind an already-linked email to a different Google identity.
+- Google account identity: the backend stores and uniquely indexes the verified Google `sub`. It does not automatically merge an existing password account by email alone; a customer must authenticate to that account and explicitly link Google through `/auth/google/link`. Conflicting subjects, duplicate emails, unverified emails, invalid tokens and non-customer roles are rejected.
 - Store ownership: approved stores link `vendor_stores.owner_user_id` to `users.id`, while `users.store_id` points back to the assigned store. Unique owner mapping is enforced. Legacy stores with no owner link require admin reconciliation first.
 - Tenant isolation: sellers may only read/manage their own store products and orders.
 - Product publication and prices: a new seller product is pending, zero-priced and unavailable. Admin sets the customer price; seller then manually toggles availability.
@@ -24,7 +24,7 @@ A green CI run means the checks in that workflow passed; it is not proof that ev
 
 ## Still open or requiring external configuration
 
-1. Google OAuth must be configured with `GOOGLE_CLIENT_ID`, Android package name and signing SHA-1, then tested on a device. Automated tests only check fail-closed behavior when not configured.
+1. Google OAuth must be configured with `GOOGLE_CLIENT_ID`, `GOOGLE_SERVER_CLIENT_ID`, the final Android application ID and signing SHA-1, then tested on a device. Automated tests mock Google verification and cannot prove real credentials work.
 2. Forgot-password deliberately returns 501 because there is no verified SMS/email recovery channel with expiry/rate limiting.
 3. Dedicated seller Flutter app and admin web dashboard have initial functional screens in this branch. CI is being expanded to analyze the seller app and syntax-check the dashboard; real end-to-end testing is still required.
 4. Internal delivery needs its own operations board, employee/courier assignment, task history and audit trail; admin can change order status but there is no dispatch workflow yet.
@@ -40,7 +40,7 @@ A green CI run means the checks in that workflow passed; it is not proof that ev
 ## Acceptance gates
 
 - [ ] Latest CI after each new change is green.
-- [ ] Google tests cover verified-subject reuse, one-time linking, conflicting identities, unverified email, invalid token, and admin-role rejection.
+- [ ] Google tests cover verified-subject reuse, explicit linking after password authentication, conflicting identities, unverified email, invalid token, duplicate email, and admin-role rejection.
 - [ ] Production settings fail closed on SQLite, missing OAuth configuration, wildcard CORS, or wildcard hosts.
 - [ ] Seller ownership and server-calculated checkout tests pass.
 - [ ] Customer checkout passes static analysis and a manual test against a running API.

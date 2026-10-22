@@ -313,7 +313,7 @@ class TestAuthAPI(unittest.TestCase):
             self.assertEqual(len(users), 1)
             self.assertEqual(users[0].google_subject, "google-subject-test-001")
 
-    def test_google_login_links_existing_customer_email_once(self):
+    def test_google_login_requires_explicit_link_for_existing_password_account(self):
         registered = self.client.post("/auth/register", json={
             "full_name": "عميل موجود",
             "phone": "777123488",
@@ -322,6 +322,7 @@ class TestAuthAPI(unittest.TestCase):
         })
         self.assertEqual(registered.status_code, 201, registered.text)
         original_id = registered.json()["user"]["id"]
+        user_token = registered.json()["access_token"]
         claims = {
             "sub": "google-subject-link-002",
             "email": "linked.customer@example.com",
@@ -331,17 +332,69 @@ class TestAuthAPI(unittest.TestCase):
         with patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "test-web-client-id"}), patch.object(
             auth.google_id_token, "verify_oauth2_token", return_value=claims
         ):
-            first = self.client.post("/auth/google", json={"id_token": "mocked-google-id-token-456"})
-            self.assertEqual(first.status_code, 200, first.text)
-            self.assertEqual(first.json()["user"]["id"], original_id)
+            auto_link = self.client.post(
+                "/auth/google",
+                json={"id_token": "mocked-google-id-token-456"},
+            )
+            self.assertEqual(auto_link.status_code, 409, auto_link.text)
+
+            with self.TestSession() as db:
+                account = db.query(models.DBUser).filter_by(id=original_id).first()
+                self.assertIsNone(account.google_subject)
+
+            linked = self.client.post(
+                "/auth/google/link",
+                headers={"Authorization": f"Bearer {user_token}"},
+                json={"id_token": "mocked-google-id-token-456"},
+            )
+            self.assertEqual(linked.status_code, 200, linked.text)
+            self.assertEqual(linked.json()["user"]["id"], original_id)
+            self.assertTrue(linked.json()["google_linked"])
+
             conflict_claims = {**claims, "sub": "different-google-subject"}
             with patch.object(auth.google_id_token, "verify_oauth2_token", return_value=conflict_claims):
-                conflict = self.client.post("/auth/google", json={"id_token": "mocked-google-id-token-789"})
+                conflict = self.client.post(
+                    "/auth/google/link",
+                    headers={"Authorization": f"Bearer {user_token}"},
+                    json={"id_token": "mocked-google-id-token-789"},
+                )
                 self.assertEqual(conflict.status_code, 409, conflict.text)
 
         with self.TestSession() as db:
             account = db.query(models.DBUser).filter_by(id=original_id).first()
             self.assertEqual(account.google_subject, "google-subject-link-002")
+
+    def test_google_link_requires_authenticated_customer_and_matching_email(self):
+        registered = self.client.post("/auth/register", json={
+            "full_name": "عميل بدون بريد",
+            "phone": "777123485",
+            "password": "SecurePass123",
+        })
+        self.assertEqual(registered.status_code, 201, registered.text)
+        token = registered.json()["access_token"]
+
+        claims = {
+            "sub": "google-subject-no-email-003",
+            "email": "verified.new@example.com",
+            "email_verified": True,
+            "name": "Google Customer",
+        }
+        with patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "test-web-client-id"}), patch.object(
+            auth.google_id_token, "verify_oauth2_token", return_value=claims
+        ):
+            unauthorized = self.client.post(
+                "/auth/google/link",
+                json={"id_token": "mocked-google-id-token-003"},
+            )
+            self.assertEqual(unauthorized.status_code, 401)
+
+            linked = self.client.post(
+                "/auth/google/link",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"id_token": "mocked-google-id-token-003"},
+            )
+            self.assertEqual(linked.status_code, 200, linked.text)
+            self.assertEqual(linked.json()["user"]["email"], "verified.new@example.com")
 
     def test_google_login_rejects_unverified_email_and_invalid_token(self):
         unverified = {

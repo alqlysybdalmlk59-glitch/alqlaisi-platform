@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/theme/app_theme.dart';
+
+const String _googleServerClientId = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
 import '../support/support_page.dart';
 
 class ProfilePage extends StatefulWidget{
@@ -11,7 +14,7 @@ class ProfilePage extends StatefulWidget{
 }
 class _ProfilePageState extends State<ProfilePage>{
   late final ApiClient _api;Map<String,dynamic>? _user;Map<String,dynamic>? _store;
-  bool _loading=true,_applying=false;String? _error;
+  bool _loading=true,_applying=false,_linkingGoogle=false;String? _error;
   @override void initState(){super.initState();_api=ApiClient();_load();}
   @override void dispose(){_api.close();super.dispose();}
   Future<void> _load()async{
@@ -30,6 +33,50 @@ class _ProfilePageState extends State<ProfilePage>{
     catch(_){if(mounted)setState(()=>_error='تعذر تحميل الملف الشخصي.');}
     finally{if(mounted)setState(()=>_loading=false);}
   }
+  Future<void> _linkGoogle() async {
+    if (_linkingGoogle) return;
+    if (_googleServerClientId.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('إعداد Google OAuth غير موجود في نسخة التطبيق هذه.')),
+      );
+      return;
+    }
+    setState(() => _linkingGoogle = true);
+    try {
+      final account = await GoogleSignIn(serverClientId: _googleServerClientId).signIn();
+      if (account == null) return;
+      final authentication = await account.authentication;
+      final idToken = authentication.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        throw const ApiException(message: 'لم يصل رمز Google. تحقق من إعداد OAuth.');
+      }
+      final response = await _api.post(
+        '/auth/google/link',
+        token: widget.token,
+        body: {'id_token': idToken},
+      );
+      if (response is! Map || response['user'] is! Map) {
+        throw const ApiException(message: 'استجابة ربط Google غير صحيحة.');
+      }
+      if (mounted) {
+        setState(() => _user = Map<String, dynamic>.from(response['user'] as Map));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم التحقق من Google وربطه بهذا الحساب.')),
+        );
+      }
+    } on ApiException catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر ربط Google. لم يتم تعديل الحساب؛ تحقق من الإعدادات والاتصال.')),
+      );
+    } finally {
+      if (mounted) setState(() => _linkingGoogle = false);
+    }
+  }
+
   Future<void> _applyStore()async{
     final key=GlobalKey<FormState>();final name=TextEditingController(),phone=TextEditingController(text:(_user?['phone']??'').toString()),description=TextEditingController();
     final submit=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('طلب فتح متجر'),
@@ -56,7 +103,20 @@ class _ProfilePageState extends State<ProfilePage>{
           const SizedBox(height:8),Chip(label:Text('الدور: ${_user?['role']??'customer'}')),
         ])),
       if(_error!=null)Padding(padding:const EdgeInsets.all(8),child:Text(_error!,style:const TextStyle(color:AppTheme.error))),
-      const SizedBox(height:10),Card(child:ListTile(leading:const Icon(Icons.support_agent),title:const Text('الدعم الفني والشكاوى'),subtitle:const Text('إرسال تذكرة ومتابعة الردود'),trailing:const Icon(Icons.chevron_left),
+      const SizedBox(height:10),
+      Card(child:ListTile(
+        leading:Icon((_user?['google_linked'] == true) ? Icons.verified_user : Icons.g_mobiledata,
+          color: (_user?['google_linked'] == true) ? Colors.green : AppTheme.primary, size: 30),
+        title:Text((_user?['google_linked'] == true) ? 'حساب Google موثّق' : 'ربط حساب Google'),
+        subtitle:Text((_user?['google_linked'] == true)
+          ? 'تم ربط هوية Google بهذا الحساب بعد التحقق من الخادم.'
+          : 'يتطلب تسجيل الدخول الحالي ثم التحقق من رمز Google على الخادم.'),
+        trailing: (_user?['google_linked'] == true)
+          ? const Icon(Icons.check_circle, color: Colors.green)
+          : (_linkingGoogle ? const SizedBox(width:20,height:20,child:CircularProgressIndicator(strokeWidth:2)) : const Icon(Icons.chevron_left)),
+        onTap: (_user?['google_linked'] == true || _linkingGoogle) ? null : _linkGoogle,
+      )),
+      Card(child:ListTile(leading:const Icon(Icons.support_agent),title:const Text('الدعم الفني والشكاوى'),subtitle:const Text('إرسال تذكرة ومتابعة الردود'),trailing:const Icon(Icons.chevron_left),
         onTap:()=>Navigator.of(context).push(MaterialPageRoute<void>(builder:(_)=>SupportPage(token:widget.token))))),
       Card(child:ListTile(leading:const Icon(Icons.storefront),title:const Text('حساب البائع والمتجر'),
         subtitle:Text(_store==null?'لم تقدم طلب متجر بعد.': '${_store?['store_name']??''} · ${_store?['status']??'قيد المراجعة'}'),

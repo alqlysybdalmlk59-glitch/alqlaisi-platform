@@ -19,6 +19,7 @@ from google.oauth2 import id_token as google_id_token
 
 import database
 import models
+from routers.dependencies import get_current_principal
 from app.core.security import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     create_access_token,
@@ -72,6 +73,7 @@ def _public_user(user: models.DBUser) -> dict[str, Any]:
         ),
         "status": getattr(user, "status", "active") or "active",
         "store_id": getattr(user, "store_id", None),
+        "google_linked": bool(getattr(user, "google_subject", None)),
     }
 
 
@@ -152,38 +154,39 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     return _session(user)
 
 
-@router.post("/google")
-def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
-    """Verify Google ID token and bind a platform account to the immutable Google subject."""
+def _verified_google_identity(id_token: str) -> tuple[str, str, str]:
+    """Verify Google's signed ID token against the configured server/web OAuth audience."""
     client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
     if not client_id:
         raise HTTPException(
             status_code=503,
             detail="تسجيل الدخول بواسطة Google غير مهيأ على الخادم.",
         )
-
     try:
         claims = google_id_token.verify_oauth2_token(
-            payload.id_token,
+            id_token,
             google_requests.Request(),
             audience=client_id,
         )
     except Exception:
-        # Never fall back to client-supplied email/name if Google's token verification fails.
+        # Signature, issuer, expiry, or audience failures must fail closed.
         raise HTTPException(status_code=401, detail="رمز Google غير صالح أو منتهي الصلاحية.")
 
     subject = str(claims.get("sub") or "").strip()
     email = str(claims.get("email") or "").strip().lower()
-    email_verified = claims.get("email_verified") is True
     name = str(claims.get("name") or "").strip()
-    if not subject or not email or not email_verified:
+    if not subject or not email or claims.get("email_verified") is not True:
         raise HTTPException(
             status_code=401,
             detail="يتطلب تسجيل الدخول بريدًا إلكترونيًا موثقًا من Google.",
         )
+    return subject, email, name
 
-    # The stable Google subject is the primary provider identity. Email is used only
-    # for verified first-time linking and collision detection.
+
+@router.post("/google")
+def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
+    """Sign in by a verified Google subject without silently merging local accounts."""
+    subject, email, name = _verified_google_identity(payload.id_token)
     user = db.query(models.DBUser).filter(
         models.DBUser.google_subject == subject
     ).first()
@@ -197,57 +200,45 @@ def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
                 raise HTTPException(status_code=403, detail="هذا الحساب غير مخصص لتطبيق العملاء.")
             if (getattr(email_user, "status", "active") or "active") != "active":
                 raise HTTPException(status_code=403, detail="الحساب غير نشط أو قيد المراجعة.")
-            linked_subject = getattr(email_user, "google_subject", None)
-            if linked_subject and linked_subject != subject:
+            if getattr(email_user, "google_subject", None):
                 raise HTTPException(
                     status_code=409,
-                    detail="هذا البريد مرتبط بهوية Google مختلفة؛ لم يتم تغيير ربط الحساب.",
+                    detail="هذا البريد مرتبط بهوية Google أخرى. سجّل الدخول بالحساب الأصلي أو تواصل مع الدعم.",
                 )
-            email_user.google_subject = subject
-            user = email_user
-        else:
-            user = models.DBUser(
-                id=f"google_{subject}",
-                name=name or email.split("@", 1)[0],
-                email=email,
-                role="CLIENT",
-                phone="",
-                address="",
-                password_hash=None,
-                status="active",
-                google_subject=subject,
+            # Email match alone is not sufficient account-linking proof for all
+            # Google account types. Require the customer to authenticate locally,
+            # then explicitly link Google from the authenticated profile page.
+            raise HTTPException(
+                status_code=409,
+                detail="يوجد حساب بهذا البريد. سجّل الدخول إليه برقم الهاتف وكلمة المرور ثم اربط Google من الملف الشخصي.",
             )
-            db.add(user)
 
+        user = models.DBUser(
+            id=f"google_{subject}",
+            name=name or email.split("@", 1)[0],
+            email=email,
+            role="CLIENT",
+            phone="",
+            address="",
+            password_hash=None,
+            status="active",
+            google_subject=subject,
+        )
+        db.add(user)
         try:
             db.commit()
             db.refresh(user)
         except IntegrityError:
             db.rollback()
-            # Concurrent first logins may race on the unique Google subject or email.
+            # Two concurrent first-time sign-ins can race on unique email/subject.
             user = db.query(models.DBUser).filter(
                 models.DBUser.google_subject == subject
             ).first()
             if user is None:
-                email_user = db.query(models.DBUser).filter(
-                    models.DBUser.email == email
-                ).first()
-                if email_user is not None and not getattr(email_user, "google_subject", None):
-                    if email_user.role.upper() in {"CLIENT", "CUSTOMER"} and (
-                        getattr(email_user, "status", "active") or "active"
-                    ) == "active":
-                        email_user.google_subject = subject
-                        try:
-                            db.commit()
-                            db.refresh(email_user)
-                            user = email_user
-                        except IntegrityError:
-                            db.rollback()
-                if user is None:
-                    raise HTTPException(
-                        status_code=409,
-                        detail="تعذر ربط حساب Google بأمان؛ حاول مجددًا أو تواصل مع الدعم.",
-                    )
+                raise HTTPException(
+                    status_code=409,
+                    detail="تعذر إنشاء حساب Google بأمان؛ حاول مجددًا أو تواصل مع الدعم.",
+                )
 
     if user.role.upper() not in {"CLIENT", "CUSTOMER"}:
         raise HTTPException(status_code=403, detail="هذا الحساب غير مخصص لتطبيق العملاء.")
@@ -255,8 +246,82 @@ def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=403, detail="الحساب غير نشط أو قيد المراجعة.")
     if getattr(user, "google_subject", None) != subject:
         raise HTTPException(status_code=409, detail="تعذر تأكيد ربط هوية Google بهذا الحساب.")
-
     return _session(user)
+
+
+@router.post("/google/link")
+def link_google_account(
+    payload: GoogleLoginRequest,
+    principal: dict = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+):
+    """Explicitly link Google only after the customer has authenticated to this account."""
+    if principal["role"] not in {"CLIENT", "CUSTOMER"}:
+        raise HTTPException(status_code=403, detail="ربط Google متاح لحسابات العملاء فقط.")
+
+    user = db.query(models.DBUser).filter(
+        models.DBUser.id == principal["id"]
+    ).first()
+    if user is None:
+        raise HTTPException(status_code=401, detail="الحساب غير موجود.")
+    if (getattr(user, "status", "active") or "active") != "active":
+        raise HTTPException(status_code=403, detail="الحساب غير نشط أو قيد المراجعة.")
+
+    subject, email, _name = _verified_google_identity(payload.id_token)
+
+    google_owner = db.query(models.DBUser).filter(
+        models.DBUser.google_subject == subject
+    ).first()
+    if google_owner is not None and str(google_owner.id) != str(user.id):
+        raise HTTPException(
+            status_code=409,
+            detail="هوية Google مرتبطة بحساب آخر؛ لم يتم تغيير أي ربط.",
+        )
+
+    current_subject = getattr(user, "google_subject", None)
+    if current_subject and current_subject != subject:
+        raise HTTPException(
+            status_code=409,
+            detail="هذا الحساب مرتبط مسبقًا بهوية Google مختلفة. لا يمكن تغييرها من هنا.",
+        )
+
+    email_owner = db.query(models.DBUser).filter(
+        models.DBUser.email == email,
+        models.DBUser.id != user.id,
+    ).first()
+    if email_owner is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="البريد الموثق من Google مرتبط بحساب آخر. لم يتم ربط الحسابين.",
+        )
+
+    stored_email = (user.email or "").strip().lower()
+    placeholder_suffix = "@accounts.alqulaisi.invalid"
+    if stored_email and not stored_email.endswith(placeholder_suffix) and stored_email != email:
+        raise HTTPException(
+            status_code=409,
+            detail="البريد الموثق من Google لا يطابق بريد هذا الحساب. استخدم البريد الصحيح أو تواصل مع الدعم.",
+        )
+
+    user.google_subject = subject
+    if not stored_email or stored_email.endswith(placeholder_suffix):
+        user.email = email
+
+    try:
+        db.commit()
+        db.refresh(user)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="تعذر ربط Google بسبب تعارض في الهوية أو البريد؛ لم يتم تغيير الربط.",
+        )
+
+    return {
+        "status": "linked",
+        "google_linked": True,
+        "user": _public_user(user),
+    }
 
 
 @router.get("/me")
