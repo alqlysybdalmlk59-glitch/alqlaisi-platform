@@ -51,7 +51,7 @@ class SellerApi {
     final headers = <String, String>{
       'Accept': 'application/json',
       if (body != null) 'Content-Type': 'application/json',
-      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer ' + token,
+      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
     };
 
     late http.Response response;
@@ -440,12 +440,14 @@ class _SellerHomePageState extends State<SellerHomePage> {
       final products = await widget.api.products(widget.token, storeId);
       final orders = await widget.api.orders(widget.token, storeId);
       final summary = await widget.api.salesSummary(widget.token, storeId);
-      if (mounted) setState(() {
-        _products = products;
-        _orders = orders;
-        _summary = summary;
-        _error = null;
-      });
+      if (mounted) {
+        setState(() {
+          _products = products;
+          _orders = orders;
+          _summary = summary;
+          _error = null;
+        });
+      }
     } catch (error) {
       if (mounted) setState(() => _error = error is SellerApiException ? error.message : 'تعذر تحميل البيانات.');
     } finally {
