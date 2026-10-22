@@ -8,6 +8,8 @@ import 'models/auth_user.dart';
 import 'services/auth_service.dart';
 import 'validators/auth_validators.dart';
 
+const String _googleServerClientId = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
+
 class LoginPage extends StatefulWidget {
   const LoginPage({
     super.key,
@@ -89,7 +91,10 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      final googleUser = await GoogleSignIn().signIn();
+      if (_googleServerClientId.isEmpty) {
+        throw const ApiException(message: 'تسجيل Google غير مهيأ في هذا البناء. أعد بناء التطبيق باستخدام GOOGLE_SERVER_CLIENT_ID الصحيح.');
+      }
+      final googleUser = await GoogleSignIn(serverClientId: _googleServerClientId).signIn();
       if (googleUser == null) {
         return; // The user cancelled the Google account picker.
       }
@@ -203,11 +208,18 @@ class _LoginPageState extends State<LoginPage> {
                         : const Text('تسجيل الدخول'),
                   ),
                   const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: _loading ? null : _loginWithGoogle,
-                    icon: const Icon(Icons.g_mobiledata, size: 30),
-                    label: const Text('متابعة باستخدام Google'),
-                  ),
+                  if (_googleServerClientId.isNotEmpty)
+                    OutlinedButton.icon(
+                      onPressed: _loading ? null : _loginWithGoogle,
+                      icon: const Icon(Icons.g_mobiledata, size: 30),
+                      label: const Text('متابعة باستخدام Google'),
+                    )
+                  else
+                    const Text(
+                      'تسجيل Google يحتاج إعداد OAuth في نسخة التطبيق قبل إتاحته.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppTheme.muted),
+                    ),
                   const SizedBox(height: 12),
                   TextButton(
                     onPressed: _loading ? null : widget.onRegister,

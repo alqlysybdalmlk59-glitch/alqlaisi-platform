@@ -65,16 +65,25 @@ class _FavoritesPageState extends State<FavoritesPage> {
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => ProductDetailsPage(product: product))),
       trailing: PopupMenuButton<String>(
-        onSelected: (value) async {
-          if (value == 'remove') await FavoritesStore.instance.remove(product.id);
-          if (value == 'cart') {
+        onSelected: (value) {
+          if (value == 'remove') {
+            FavoritesStore.instance.remove(product.id).catchError((Object _) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('تعذر إزالة المنتج من المفضلة.')),
+                );
+              }
+            });
+          } else if (value == 'cart') {
             try {
               CartScope.of(context).add(product);
-              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('تمت إضافة المنتج إلى السلة.')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('تمت إضافة المنتج إلى السلة.')),
+              );
             } catch (error) {
-              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(error.toString())));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(error.toString())),
+              );
             }
           }
         },

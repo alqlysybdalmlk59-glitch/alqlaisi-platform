@@ -17,7 +17,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
   @override void dispose() { _api.close(); super.dispose(); }
   @override void didUpdateWidget(covariant NotificationsPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.token != widget.token) _load();
+    if (oldWidget.token != widget.token) {
+      _load();
+    }
   }
   Future<void> _load() async {
     setState(() { _loading = true; _error = null; });

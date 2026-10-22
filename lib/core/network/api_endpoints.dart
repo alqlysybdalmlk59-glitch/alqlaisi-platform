@@ -1,7 +1,21 @@
+import 'package:flutter/foundation.dart';
+
 class ApiEndpoints {
   ApiEndpoints._();
 
-  static const String baseUrl = 'http://localhost:8000/api';
+  static const String _configuredBaseUrl = String.fromEnvironment('API_BASE_URL');
+
+  static String get baseUrl {
+    if (_configuredBaseUrl.trim().isNotEmpty) {
+      return _configuredBaseUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    }
+    if (kIsWeb) return 'http://localhost:8000/api';
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      // Android emulator host loopback; production builds should pass API_BASE_URL.
+      return 'http://10.0.2.2:8000/api';
+    }
+    return 'http://localhost:8000/api';
+  }
 
   static const String checkout = '/checkout';
   static const String orderDetails = '/orders';
