@@ -119,9 +119,15 @@ class _SellerAppState extends State<SellerApp> {
       final token = await _api.readToken();
       if (token != null && token.isNotEmpty) {
         final user = await _api.me(token);
-        if (mounted) { setState(() { _token = token; _user = user; }); await _loadStore(); }
+        if (mounted) {
+          setState(() { _token = token; _user = user; });
+          await _loadStore();
+        }
       }
-    } catch (_) { await _api.clearToken(); }
+    } catch (_) {
+      await _api.clearToken();
+      if (mounted) setState(() { _token = null; _user = null; _store = null; });
+    }
     finally { if (mounted) setState(() => _starting = false); }
   }
   Future<void> _login(String phone, String password) async {
@@ -325,7 +331,13 @@ class _SellerDashboardState extends State<SellerDashboard> {
         Text('طلب ${o['id']}',style:Theme.of(context).textTheme.titleMedium),const SizedBox(height:5),
         Text('الإجمالي شامل التوصيل: $total ريال'),Text('طريقة الدفع: ${o['payment_method']??'الدفع عند الاستلام'}'),
         Text('العنوان: ${o['address']??'—'}'),Text('الحالة: $status'),
-        if(allowed.isNotEmpty)Wrap(spacing:8,children:allowed.map((s)=>OutlinedButton(onPressed:()=>_updateOrder(o,s),child:Text(s)).toList()),
+        if(allowed.isNotEmpty) Wrap(
+          spacing: 8,
+          children: allowed.map((s) => OutlinedButton(
+            onPressed: () => _updateOrder(o, s),
+            child: Text(s),
+          )).toList(),
+        ),
       ])));
     }));
   }
