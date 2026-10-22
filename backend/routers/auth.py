@@ -254,6 +254,63 @@ def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
     return _session(user)
 
 
+@router.post("/google/seller")
+def google_seller_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
+    """Google login for the seller app; may authenticate a customer applying to sell."""
+    subject, email, name = _verified_google_identity(payload.id_token)
+    user = db.query(models.DBUser).filter(models.DBUser.google_subject == subject).first()
+
+    if user is None:
+        email_user = db.query(models.DBUser).filter(models.DBUser.email == email).first()
+        if email_user is not None:
+            if email_user.role.upper() not in {"CLIENT", "CUSTOMER", "VENDOR", "SELLER"}:
+                raise HTTPException(status_code=403, detail="هذا الحساب غير مخصص لتطبيق البائعين.")
+            if (getattr(email_user, "status", "active") or "active") != "active":
+                raise HTTPException(status_code=403, detail="الحساب غير نشط.")
+            raise HTTPException(
+                status_code=409,
+                detail="يوجد حساب بهذا البريد. سجّل الدخول إليه أولاً ثم اربط Google من الحساب؛ لا يتم دمج الحسابات تلقائياً.",
+            )
+
+        user = models.DBUser(
+            id=f"google_{subject}",
+            name=name or email.split("@", 1)[0],
+            email=email,
+            role="CLIENT",
+            phone="",
+            address="",
+            password_hash=None,
+            status="active",
+            google_subject=subject,
+        )
+        db.add(user)
+        try:
+            db.commit()
+            db.refresh(user)
+        except IntegrityError:
+            db.rollback()
+            user = db.query(models.DBUser).filter(models.DBUser.google_subject == subject).first()
+            if user is None:
+                raise HTTPException(status_code=409, detail="تعذر تسجيل الدخول بواسطة Google بأمان؛ حاول مجدداً.")
+
+    if (getattr(user, "status", "active") or "active") != "active":
+        raise HTTPException(status_code=403, detail="الحساب غير نشط أو موقوف.")
+    if user.role.upper() in {"ADMIN", "SUPPORT", "OPERATIONS"}:
+        raise HTTPException(status_code=403, detail="هذا الدور لا يستخدم بوابة البائعين.")
+    if user.role.upper() in {"VENDOR", "SELLER"}:
+        store = db.query(models.DBVendorStore).filter(
+            models.DBVendorStore.owner_user_id == str(user.id),
+            models.DBVendorStore.status == "مفعل",
+        ).first()
+        if store is None or getattr(user, "store_id", None) != store.id:
+            raise HTTPException(status_code=403, detail="متجر هذا الحساب غير معتمد أو غير مربوط بالمالك.")
+    elif user.role.upper() not in {"CLIENT", "CUSTOMER"}:
+        raise HTTPException(status_code=403, detail="هذا الحساب غير مؤهل لاستخدام بوابة البائعين.")
+    if getattr(user, "google_subject", None) != subject:
+        raise HTTPException(status_code=409, detail="تعذر تأكيد هوية Google لهذا الحساب.")
+    return _session(user)
+
+
 @router.post("/google/link")
 def link_google_account(
     payload: GoogleLoginRequest,
@@ -261,8 +318,8 @@ def link_google_account(
     db: Session = Depends(get_db),
 ):
     """Explicitly link Google only after the customer has authenticated to this account."""
-    if principal["role"] not in {"CLIENT", "CUSTOMER"}:
-        raise HTTPException(status_code=403, detail="ربط Google متاح لحسابات العملاء فقط.")
+    if principal["role"] not in {"CLIENT", "CUSTOMER", "VENDOR", "SELLER"}:
+        raise HTTPException(status_code=403, detail="ربط Google متاح للعملاء والبائعين فقط.")
 
     user = db.query(models.DBUser).filter(
         models.DBUser.id == principal["id"]
@@ -271,6 +328,13 @@ def link_google_account(
         raise HTTPException(status_code=401, detail="الحساب غير موجود.")
     if (getattr(user, "status", "active") or "active") != "active":
         raise HTTPException(status_code=403, detail="الحساب غير نشط أو قيد المراجعة.")
+    if user.role.upper() in {"VENDOR", "SELLER"}:
+        owned_store = db.query(models.DBVendorStore).filter(
+            models.DBVendorStore.owner_user_id == str(user.id),
+            models.DBVendorStore.status == "مفعل",
+        ).first()
+        if owned_store is None or getattr(user, "store_id", None) != owned_store.id:
+            raise HTTPException(status_code=403, detail="يجب أن يكون متجر البائع معتمداً ومرتبطاً بحسابه.")
 
     subject, email, _name = _verified_google_identity(payload.id_token)
 
