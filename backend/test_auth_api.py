@@ -613,6 +613,32 @@ class TestAuthAPI(unittest.TestCase):
             self.assertEqual(linked.status_code, 200, linked.text)
             self.assertEqual(linked.json()["user"]["email"], "verified.new@example.com")
 
+    def test_seller_can_explicitly_link_google_then_sign_in_with_google(self):
+        seller_token, _admin, store, _product_id = self._approved_store_and_product("777123484")
+        google_subject = "seller-google-subject-484"
+        claims = (google_subject, "seller484@example.com", "Seller Account")
+        with patch.object(auth, "_verified_google_identity", return_value=claims):
+            linked = self.client.post(
+                "/auth/google/link",
+                headers={"Authorization": f"Bearer {seller_token}"},
+                json={"id_token": "mocked-google-id-token"},
+            )
+            self.assertEqual(linked.status_code, 200, linked.text)
+            self.assertTrue(linked.json()["google_linked"])
+
+            session = self.client.post(
+                "/auth/google/seller",
+                json={"id_token": "mocked-google-id-token"},
+            )
+            self.assertEqual(session.status_code, 200, session.text)
+            self.assertEqual(session.json()["user"]["role"], "seller")
+            self.assertEqual(session.json()["user"]["store_id"], store["id"])
+
+        with self.TestSession() as db:
+            saved = db.query(models.DBUser).filter_by(id=session.json()["user"]["id"]).first()
+            self.assertEqual(saved.google_subject, google_subject)
+            self.assertEqual(saved.store_id, store["id"])
+
     def test_google_login_rejects_unverified_email_and_invalid_token(self):
         unverified = {
             "sub": "google-unverified-subject",
