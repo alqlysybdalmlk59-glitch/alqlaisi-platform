@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
@@ -73,6 +74,43 @@ class _LoginPageState extends State<LoginPage> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _error = 'تعذر تسجيل الدخول.');
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _loginWithGoogle() async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final googleUser = await GoogleSignIn().signIn();
+      if (googleUser == null) {
+        return; // The user cancelled the Google account picker.
+      }
+
+      final googleAuth = await googleUser.authentication;
+      final idToken = googleAuth.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        throw const ApiException(
+          message: 'لم يصل رمز التحقق من Google. تحقق من إعداد OAuth.',
+        );
+      }
+
+      final session = await _authService.signInWithGoogle(idToken: idToken);
+      if (!mounted) return;
+      widget.onAuthenticated(session);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = 'تعذر تسجيل الدخول بواسطة Google. تحقق من الإعدادات والاتصال.');
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -163,6 +201,12 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           )
                         : const Text('تسجيل الدخول'),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: _loading ? null : _loginWithGoogle,
+                    icon: const Icon(Icons.g_mobiledata, size: 30),
+                    label: const Text('متابعة باستخدام Google'),
                   ),
                   const SizedBox(height: 12),
                   TextButton(
