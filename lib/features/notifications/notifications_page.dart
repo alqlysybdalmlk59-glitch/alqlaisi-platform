@@ -68,14 +68,7 @@ class _NotificationsPageState extends State<NotificationsPage>
     }
 
     try {
-      final user = await _api.get('/auth/me', token: widget.token);
-      if (user is! Map || (user['id'] ?? '').toString().isEmpty) {
-        throw const FormatException('Invalid current-user response.');
-      }
-      final data = await _api.get(
-        '/orders/client/${Uri.encodeComponent(user['id'].toString())}',
-        token: widget.token,
-      );
+      final data = await _api.get('/orders/notifications/mine', token: widget.token);
       if (data is! List) throw const FormatException('Invalid orders response.');
       if (mounted) {
         setState(() {
@@ -150,11 +143,11 @@ class _NotificationsPageState extends State<NotificationsPage>
                   backgroundColor: AppTheme.primary.withValues(alpha: .1),
                   child: Icon(_icon(status), color: AppTheme.primary),
                 ),
-                title: Text('تحديث الطلب ${order['id'] ?? ''}'),
+                title: Text('تحديث الطلب ${order['order_id'] ?? ''}'),
                 subtitle: Text(
-                  'المتجر: ${order['vendor_name'] ?? ''}\n'
-                  'الحالة الحالية: $status\n'
-                  'الإجمالي: ${order['total_price'] ?? 0} ريال',
+                  '${order['old_status'] == null ? 'تم إنشاء الطلب' : order['old_status']} ← $status\\n'
+                  'المتجر: ${order['vendor_name'] ?? ''} · الإجمالي: ${order['total_price'] ?? 0} ريال\\n'
+                  '${order['note'] ?? ''} · ${order['created_at'] ?? ''}',
                 ),
                 isThreeLine: true,
               ),
@@ -180,7 +173,7 @@ class _NotificationsPageState extends State<NotificationsPage>
           MaterialBanner(
             content: Text(
               'تُحدّث حالات الطلبات تلقائياً كل 30 ثانية أثناء فتح الصفحة. '
-              'الإشعارات الفورية Push غير مفعّلة بعد.\n${_lastUpdatedText()}',
+              'يعرض هذا السجل أحداث تغيير الحالة المحفوظة على الخادم؛ إشعارات نظام التشغيل Push غير مفعّلة بعد.\n${_lastUpdatedText()}',
             ),
             actions: const [SizedBox.shrink()],
           ),
