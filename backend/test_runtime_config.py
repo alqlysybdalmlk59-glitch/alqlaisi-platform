@@ -14,6 +14,7 @@ class TestProductionRuntimeConfig(unittest.TestCase):
             "JWT_SECRET_KEY": "a" * 64,
             "GOOGLE_CLIENT_ID": "test-web-oauth-client-id.apps.googleusercontent.com",
             "ALLOWED_HOSTS": "api.example.net",
+            "FORWARDED_ALLOW_IPS": "127.0.0.1",
         }
 
     def test_valid_production_settings_are_accepted(self):
@@ -75,6 +76,16 @@ class TestProductionRuntimeConfig(unittest.TestCase):
              patch.object(runtime_config, "ALLOWED_HOSTS", ["*"]):
             with self.assertRaisesRegex(RuntimeError, "ALLOWED_HOSTS"):
                 runtime_config.validate_production_configuration()
+
+    def test_production_requires_explicit_trusted_proxy_ips(self):
+        for proxy_value in ("", "*", "127.0.0.1,*"):
+            env = {**self.good_env, "FORWARDED_ALLOW_IPS": proxy_value}
+            with patch.dict(os.environ, env, clear=False), \
+                 patch.object(runtime_config, "IS_PRODUCTION", True), \
+                 patch.object(runtime_config, "CORS_ORIGINS", ["https://admin.example.net"]), \
+                 patch.object(runtime_config, "ALLOWED_HOSTS", ["api.example.net"]):
+                with self.assertRaisesRegex(RuntimeError, "FORWARDED_ALLOW_IPS"):
+                    runtime_config.validate_production_configuration()
 
     def test_development_does_not_require_production_secrets(self):
         with patch.object(runtime_config, "IS_PRODUCTION", False):

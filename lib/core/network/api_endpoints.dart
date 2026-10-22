@@ -5,6 +5,8 @@ class ApiEndpoints {
 
   static const String _configuredBaseUrl = String.fromEnvironment('API_BASE_URL');
   static const String _blockedBaseUrl = 'https://api-not-configured.invalid/api';
+  static const String _googleServerClientId =
+      String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
 
   /// Release builds must be explicitly configured with an HTTPS API endpoint.
   /// Never fall back to localhost or send credentials over cleartext HTTP in production.
@@ -17,6 +19,9 @@ class ApiEndpoints {
     final uri = Uri.tryParse(configured);
     if (uri == null || uri.scheme != 'https' || uri.host.isEmpty || uri.userInfo.isNotEmpty) {
       return 'عنوان API غير آمن. يجب استخدام HTTPS وعنوان خادم موثوق.';
+    }
+    if (_googleServerClientId.trim().isEmpty) {
+      return 'نسخة الإنتاج غير مهيأة: يجب تحديد GOOGLE_SERVER_CLIENT_ID المتطابق مع إعداد الخادم قبل إتاحة تسجيل Google.';
     }
     return null;
   }

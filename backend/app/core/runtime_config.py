@@ -26,6 +26,11 @@ def validate_production_configuration() -> None:
         raise RuntimeError("Production requires a unique random JWT_SECRET_KEY of at least 48 characters.")
     if not os.getenv("GOOGLE_CLIENT_ID", "").strip():
         raise RuntimeError("Production requires GOOGLE_CLIENT_ID matching the app's Google server client ID.")
+    forwarded_allow_ips = os.getenv("FORWARDED_ALLOW_IPS", "").strip()
+    if not forwarded_allow_ips:
+        raise RuntimeError("Production requires explicit FORWARDED_ALLOW_IPS for trusted ingress proxies.")
+    if any(value.strip() == "*" for value in forwarded_allow_ips.split(",")):
+        raise RuntimeError("FORWARDED_ALLOW_IPS must not trust every proxy; configure exact trusted ingress addresses.")
     if not CORS_ORIGINS or "*" in CORS_ORIGINS:
         raise RuntimeError("Production requires explicit CORS_ALLOW_ORIGINS; wildcard origins are forbidden.")
     for origin in CORS_ORIGINS:
