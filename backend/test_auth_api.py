@@ -226,6 +226,48 @@ class TestAuthAPI(unittest.TestCase):
             headers={"Authorization": f"Bearer {seller_a}"})
         self.assertEqual(response.status_code, 403, response.text)
 
+    def test_seller_sales_summary_is_store_scoped_and_does_not_invent_commission(self):
+        seller_token, admin_token, store, product_id = self._approved_store_and_product("777123497")
+        buyer_token, _buyer_id = self._register("777123498")
+        checkout = self.client.post(
+            "/api/checkout",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+            json={
+                "recipient_name": "عميل التقرير",
+                "phone": "777000444",
+                "delivery_address": "صنعاء، الحي، الشارع",
+                "items": [{"product_id": product_id, "quantity": 1}],
+            },
+        )
+        self.assertEqual(checkout.status_code, 201, checkout.text)
+        order_id = checkout.json()[0]["id"]
+        delivered = self.client.put(
+            f"/api/orders/{order_id}/status?status=تم التسليم",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        self.assertEqual(delivered.status_code, 200, delivered.text)
+
+        summary = self.client.get(
+            f"/api/orders/vendor/{store['id']}/summary",
+            headers={"Authorization": f"Bearer {seller_token}"},
+        )
+        self.assertEqual(summary.status_code, 200, summary.text)
+        body = summary.json()
+        self.assertEqual(body["store_id"], store["id"])
+        self.assertEqual(body["order_count"], 1)
+        self.assertEqual(body["delivered_count"], 1)
+        self.assertEqual(body["delivered_gross_value"], 190)
+        self.assertEqual(body["currency"], "YER")
+        self.assertFalse(body["commission_configured"])
+        self.assertIsNone(body["commission_percent"])
+        self.assertIsNone(body["commission_value"])
+
+        other_store_response = self.client.get(
+            "/api/orders/vendor/not-this-store/summary",
+            headers={"Authorization": f"Bearer {seller_token}"},
+        )
+        self.assertEqual(other_store_response.status_code, 403, other_store_response.text)
+
     def test_seller_access_requires_current_two_way_store_ownership(self):
         seller_token, _admin_token, store, _product_id = self._approved_store_and_product("777123494")
         with self.TestSession() as db:
