@@ -47,6 +47,7 @@ class TestAuthAPI(unittest.TestCase):
     def setUp(self):
         with self.TestSession() as db:
             db.query(models.DBSupportTicket).delete()
+            db.query(models.DBVendorOwnershipHistory).delete()
             db.query(models.DBOrderStatusHistory).delete()
             db.query(models.DBOrder).delete()
             db.query(models.DBProduct).delete()
@@ -231,12 +232,78 @@ class TestAuthAPI(unittest.TestCase):
         response = self.client.put(
             f"/api/vendors/{store['id']}/owner",
             headers={"Authorization": f"Bearer {admin_token}"},
-            json={"user_id": other_user_id},
+            json={"user_id": other_user_id, "verification_note": "تم التحقق من الهوية للمراجعة الإدارية."},
         )
         self.assertEqual(response.status_code, 409, response.text)
         with self.TestSession() as db:
             current = db.query(models.DBVendorStore).filter_by(id=store["id"]).first()
             self.assertEqual(current.owner_user_id, "u_777123486")
+
+    def test_legacy_store_owner_link_requires_review_note_and_is_audited(self):
+        _token, user_id = self._register("777123491")
+        admin_token = self._admin_token()
+        with self.TestSession() as db:
+            db.add(models.DBVendorStore(
+                id="legacy_store_unowned", store_name="متجر قديم", owner_name="مالك قديم",
+                phone="777123491", description="", status="قيد المراجعة",
+                admin_notes="", owner_user_id=None, delivery_fee=15,
+            ))
+            db.commit()
+        missing_note = self.client.put(
+            "/api/vendors/legacy_store_unowned/owner",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"user_id": user_id},
+        )
+        self.assertEqual(missing_note.status_code, 422, missing_note.text)
+        linked = self.client.put(
+            "/api/vendors/legacy_store_unowned/owner",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"user_id": user_id, "verification_note": "تمت مراجعة بيانات المالك يدوياً."},
+        )
+        self.assertEqual(linked.status_code, 200, linked.text)
+        history = self.client.get(
+            "/api/vendors/legacy_store_unowned/ownership-history",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        self.assertEqual(history.status_code, 200, history.text)
+        self.assertEqual(len(history.json()), 1)
+        self.assertEqual(history.json()[0]["actor_user_id"], "admin_test")
+        self.assertEqual(history.json()[0]["new_owner_user_id"], user_id)
+        self.assertEqual(history.json()[0]["action"], "legacy_owner_linked")
+        self.assertIn("مراجعة", history.json()[0]["verification_note"])
+
+    def test_temporary_store_suspension_preserves_owner_link_and_can_be_restored(self):
+        seller_token, admin_token, store, _product_id = self._approved_store_and_product("777123492")
+        suspended = self.client.put(f"/api/vendors/{store['id']}/suspend",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(suspended.status_code, 200, suspended.text)
+        public = self.client.get("/api/vendors/public")
+        self.assertNotIn(store["id"], [row["id"] for row in public.json()])
+        seller_products = self.client.get(f"/api/products/vendor/{store['id']}",
+            headers={"Authorization": f"Bearer {seller_token}"})
+        self.assertEqual(seller_products.status_code, 403, seller_products.text)
+        with self.TestSession() as db:
+            owner = db.query(models.DBUser).filter_by(id="u_777123492").first()
+            saved_store = db.query(models.DBVendorStore).filter_by(id=store["id"]).first()
+            self.assertEqual(owner.role, "VENDOR")
+            self.assertEqual(owner.store_id, store["id"])
+            self.assertEqual(saved_store.owner_user_id, owner.id)
+        restored = self.client.put(f"/api/vendors/{store['id']}/restore",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(restored.status_code, 200, restored.text)
+        public_after = self.client.get("/api/vendors/public")
+        self.assertIn(store["id"], [row["id"] for row in public_after.json()])
+        history = self.client.get(f"/api/vendors/{store['id']}/ownership-history",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(history.status_code, 200, history.text)
+        self.assertEqual([row["action"] for row in history.json()],
+            ["application_submitted", "store_approved", "store_suspended", "store_restored"])
+
+    def test_store_rejection_cannot_be_used_to_suspend_an_active_store(self):
+        _seller, admin_token, store, _product = self._approved_store_and_product("777123493")
+        response = self.client.put(f"/api/vendors/{store['id']}/reject?reason=Test",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(response.status_code, 409, response.text)
 
     def test_admin_can_suspend_account_and_public_store_disappears(self):
         seller_token, seller_id = self._register("777123489")

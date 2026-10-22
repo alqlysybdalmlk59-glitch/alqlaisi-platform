@@ -109,42 +109,71 @@
   function renderStores() {
     const wrap = element("div");
     const toolbar = element("div", "toolbar");
-    toolbar.append(element("p", "muted", "اعتماد المتجر يربط حساب المالك ويمنحه دور البائع؛ لا تعتمد متجراً بلا حساب مالك موثق."));
+    toolbar.append(element("p", "muted", "تُربط المتاجر بحساب واحد فقط. يتطلب الربط الإداري لمتجر قديم ملاحظة توثّق طريقة التحقق، ويُسجَّل كل إجراء في سجل الملكية."));
     const list = [];
     state.vendors.forEach(store => {
       const actions = [];
-      if (!store.owner_user_id) {
+      if (!store.owner_user_id && store.status !== "مفعل") {
         actions.push(action("ربط حساب المالك", "secondary", async () => {
-          const userId = prompt("أدخل معرّف حساب العميل الذي تحققتم من ملكيته للمتجر:");
+          const userId = prompt("أدخل معرّف حساب العميل الذي تم التحقق من هويته:");
           if (userId === null || !userId.trim()) return;
+          const verificationNote = prompt("اكتب ملاحظة توثيقية (10 أحرف على الأقل) تشرح كيفية التحقق من ملكية المتجر:");
+          if (verificationNote === null || verificationNote.trim().length < 10) throw new Error("يلزم إدخال ملاحظة توثيقية واضحة قبل ربط المالك.");
           await api("/vendors/" + encodeURIComponent(store.id) + "/owner", {
-            method: "PUT",
-            body: {user_id: userId.trim()}
+            method: "PUT", body: {user_id: userId.trim(), verification_note: verificationNote.trim()}
           });
-          notify("تم ربط حساب المالك. راجع هوية الحساب قبل اعتماد المتجر.");
+          notify("تم ربط حساب المالك وتسجيل سبب التحقق في سجل الملكية.");
           await refreshData();
         }));
       }
-      if (store.status !== "مفعل" && store.owner_user_id) {
+      if (store.status === "قيد المراجعة" && store.owner_user_id) {
         actions.push(action("اعتماد المتجر", "primary", async () => {
           await api("/vendors/" + encodeURIComponent(store.id) + "/approve", {method:"PUT"});
           notify("تم اعتماد المتجر وربط الحساب.");
           await refreshData();
         }));
-      }
-      if (store.status !== "مرفوض") {
-        actions.push(action(store.status === "مفعل" ? "إيقاف المتجر" : "رفض طلب المتجر", "danger", async () => {
-          const confirmed = window.confirm(store.status === "مفعل"
-            ? "سيؤدي ذلك إلى إيقاف ظهور منتجات المتجر ومنع الشراء منها. هل تتابع؟"
-            : "هل تريد رفض طلب المتجر؟");
-          if (!confirmed) return;
-          await api("/vendors/" + encodeURIComponent(store.id) + "/reject", {method:"PUT"});
-          notify("تم تحديث حالة المتجر.");
+        actions.push(action("رفض طلب المتجر", "danger", async () => {
+          const reason = prompt("سبب الرفض (سيُحفظ في سجل الملكية):");
+          if (reason === null || !reason.trim()) return;
+          await api("/vendors/" + encodeURIComponent(store.id) + "/reject?reason=" + encodeURIComponent(reason.trim()), {method:"PUT"});
+          notify("تم رفض المتجر وتوثيق السبب.");
+          await refreshData();
+        }));
+      } else if (store.status === "مفعل") {
+        actions.push(action("إيقاف مؤقت", "danger", async () => {
+          if (!window.confirm("سيوقف هذا المتجر مؤقتاً ويمنع ظهور منتجاته والشراء منها مع الاحتفاظ برابط الملكية. هل تتابع؟")) return;
+          await api("/vendors/" + encodeURIComponent(store.id) + "/suspend", {method:"PUT"});
+          notify("تم إيقاف المتجر مؤقتاً مع الاحتفاظ بالمالك وسجل الملكية.");
+          await refreshData();
+        }));
+      } else if (store.status === "موقوف") {
+        actions.push(action("إعادة تفعيل المتجر", "primary", async () => {
+          await api("/vendors/" + encodeURIComponent(store.id) + "/restore", {method:"PUT"});
+          notify("تمت إعادة تفعيل المتجر.");
+          await refreshData();
+        }));
+        actions.push(action("رفض المتجر", "danger", async () => {
+          const reason = prompt("سبب الرفض (سيُحفظ في سجل الملكية):");
+          if (reason === null || !reason.trim()) return;
+          await api("/vendors/" + encodeURIComponent(store.id) + "/reject?reason=" + encodeURIComponent(reason.trim()), {method:"PUT"});
+          notify("تم رفض المتجر وتوثيق السبب.");
           await refreshData();
         }));
       }
+      actions.push(action("سجل الملكية", "secondary", async () => {
+        const history = await api("/vendors/" + encodeURIComponent(store.id) + "/ownership-history");
+        if (!Array.isArray(history) || history.length === 0) { window.alert("لا توجد إجراءات موثقة لهذا المتجر."); return; }
+        window.alert(history.map(event =>
+          (event.created_at || "") + " | " + (event.action || "") +
+          " | المنفذ: " + (event.actor_user_id || "—") +
+          " | المالك السابق: " + (event.previous_owner_user_id || "—") +
+          " | المالك الجديد: " + (event.new_owner_user_id || "—") +
+          " | التوثيق: " + (event.verification_note || "")
+        ).join("\\n\\n"));
+      }));
       const feeInput = element("input", "");
-      feeInput.type = "number"; feeInput.min = "0"; feeInput.step = "0.01"; feeInput.value = String(store.delivery_fee ?? 15);
+      feeInput.type = "number"; feeInput.min = "0"; feeInput.step = "0.01";
+      feeInput.value = String(store.delivery_fee ?? 15);
       feeInput.setAttribute("aria-label", "رسوم توصيل " + store.store_name);
       const feeSave = action("حفظ الرسم", "secondary", async () => {
         const fee = Number(feeInput.value);
@@ -153,13 +182,13 @@
         notify("تم تحديث رسوم توصيل المتجر.");
         await refreshData();
       });
-      const fee = element("div", "inline-field"); fee.append(feeInput, feeSave);
+      const fee = element("div", "inline-field");
+      fee.append(feeInput, feeSave);
       list.push(record(store.store_name, [
-        "اسم المالك: " + (store.owner_name || "—"),
-        "حساب المالك: " + (store.owner_user_id || "غير مربوط — يلزم التحقق والربط"),
+        "المالك: " + (store.owner_name || "—"),
+        "معرّف المالك: " + (store.owner_user_id || "غير مربوط"),
         "الهاتف: " + (store.phone || "—"),
-        "رسوم التوصيل: " + (store.delivery_fee ?? 15) + " ريال",
-        "معرف المتجر: " + store.id
+        "المعرّف: " + store.id,
       ], store.status, actions.concat([fee])));
     });
     wrap.append(toolbar, listOrEmpty(list, "لا توجد متاجر مسجلة حتى الآن."));

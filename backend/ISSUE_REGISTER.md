@@ -10,7 +10,7 @@ A green CI run means the checks in that workflow passed; it is not proof that ev
 - Unauthenticated business routes: orders, vendor management, product management, and support use database-backed authentication and role dependencies.
 - Role trust: protected requests reload the account and role from the database; inactive/suspended accounts are denied.
 - Google account identity: the backend stores and uniquely indexes the verified Google `sub`. It does not automatically merge an existing password account by email alone; a customer must authenticate to that account and explicitly link Google through `/auth/google/link`. Conflicting subjects, duplicate emails, unverified emails, invalid tokens and non-customer roles are rejected.
-- Store ownership: approved stores link `vendor_stores.owner_user_id` to `users.id`, while `users.store_id` points back to the assigned store. Unique owner mapping is enforced. Legacy stores with no owner link require admin reconciliation first.
+- Store ownership: seller permissions require a matching current `owner_user_id`/`store_id` relationship on an active store. Administrative linking requires a verification note; linking, approval, rejection, suspension and restoration are recorded in `vendor_ownership_history`.
 - Tenant isolation: sellers may only read/manage their own store products and orders.
 - Product publication and prices: a new seller product is pending, zero-priced and unavailable. Admin sets the customer price; seller then manually toggles availability.
 - Checkout: server derives price, product availability/publication, store, and delivery fee from database data; rejects unsupported payment methods, ignores supplied totals, and splits a mixed cart into per-store orders.
@@ -27,13 +27,13 @@ A green CI run means the checks in that workflow passed; it is not proof that ev
 1. Google OAuth must be configured with `GOOGLE_CLIENT_ID`, `GOOGLE_SERVER_CLIENT_ID`, the final Android application ID and signing SHA-1, then tested on a device. Automated tests mock Google verification and cannot prove real credentials work.
 2. Forgot-password deliberately returns 501 because there is no verified SMS/email recovery channel with expiry/rate limiting.
 3. Dedicated seller Flutter app and admin web dashboard have initial functional screens in this branch. CI is being expanded to analyze the seller app and syntax-check the dashboard; real end-to-end testing is still required.
-4. Internal delivery needs its own operations board, employee/courier assignment, task history and audit trail; admin can change order status but there is no dispatch workflow yet.
+4. Internal delivery still needs an operations board and employee/courier assignment; order-state audit history exists, but there is no full dispatch workflow yet.
 5. Version 1 payment remains cash on delivery. No online payments or transfers are implemented.
 6. Commission percentage and settlement policy remain undecided. No real financial transfers are implemented.
 7. Customer profile, addresses, favourites, notifications, ratings and some listings must be audited individually for persistence. Some screens may currently render without being API-connected.
 8. SQLite is the default DB. Setting `DATABASE_URL` to PostgreSQL does not migrate SQLite data. Back up and test a data migration, validate row counts and owner mappings before cutover.
 9. Before production, set a strong JWT secret, explicit CORS origins, HTTPS, auth/checkout rate limiting, audit logging and backup/restore procedures.
-10. Reconcile legacy store rows with null `owner_user_id` and resolve duplicated/inaccurate mappings through admin review.
+10. Reconcile legacy store rows with null `owner_user_id` and resolve duplicated/inaccurate mappings through admin review; each manual link now requires a recorded verification note.
 11. `/api/ai/sales-insights` is still a placeholder and is not connected to actual analytics.
 12. Current CI compiles Python, runs security/auth and production-config tests, analyzes the customer Flutter app and seller app, and syntax-checks the admin dashboard JavaScript; it does not replace device/browser end-to-end tests or deployment verification.
 
