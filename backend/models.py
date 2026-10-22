@@ -12,6 +12,8 @@ class DBUser(Base):
     password_hash = Column(String, nullable=True)
     status = Column(String, nullable=False, default="active")
     store_id = Column(String, nullable=True, index=True)
+    # Stable Google identity; never trust a client-supplied email as proof of identity.
+    google_subject = Column(String, nullable=True, unique=True, index=True)
 
 class DBVendorStore(Base):
     __tablename__ = "vendor_stores"

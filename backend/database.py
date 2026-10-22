@@ -28,6 +28,7 @@ def ensure_schema_compatibility() -> None:
             "password_hash": "VARCHAR",
             "status": "VARCHAR NOT NULL DEFAULT 'active'",
             "store_id": "VARCHAR",
+            "google_subject": "VARCHAR",
         },
         "vendor_stores": {
             "owner_user_id": "VARCHAR",
@@ -52,6 +53,13 @@ def ensure_schema_compatibility() -> None:
         with engine.begin() as connection:
             for statement in statements:
                 connection.execute(text(statement))
+    if "users" in tables and engine.dialect.name in {"sqlite", "postgresql"}:
+        with engine.begin() as connection:
+            connection.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_users_google_subject "
+                "ON users (google_subject) WHERE google_subject IS NOT NULL"
+            ))
+
     # NULL ownership is allowed for legacy rows; duplicate non-null owner mappings are not.
     if "vendor_stores" in tables and engine.dialect.name in {"sqlite", "postgresql"}:
         with engine.begin() as connection:

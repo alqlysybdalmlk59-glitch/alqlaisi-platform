@@ -1,5 +1,6 @@
 from typing import Optional
 from pydantic import BaseModel, Field, ConfigDict
+from typing import Literal
 
 class ORMModel(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="ignore")
@@ -34,7 +35,7 @@ class ProductCreateRequest(BaseModel):
     vendor_id: Optional[str] = None  # Admin-only; seller store is derived from account.
 
 class ProductApprovalRequest(BaseModel):
-    sale_price: float = Field(gt=0, le=100000000)
+    sale_price: float = Field(gt=0, le=100000000, allow_inf_nan=False)
     approved: bool = True
     admin_notes: str = Field(default="", max_length=2000)
 
@@ -78,6 +79,15 @@ class VendorStoreSchema(ORMModel):
     admin_notes: Optional[str] = ""
     delivery_fee: float = 15.0
 
+class AdminVendorStoreSchema(VendorStoreSchema):
+    # Owner identity is exposed only in the authenticated administration route.
+    owner_user_id: Optional[str] = None
+
+
+class UserStatusRequest(BaseModel):
+    status: Literal["active", "suspended"]
+
+
 class VendorApplicationRequest(BaseModel):
     store_name: str = Field(min_length=2, max_length=120)
     phone: str = Field(min_length=7, max_length=20)
@@ -87,7 +97,7 @@ class VendorOwnerLinkRequest(BaseModel):
     user_id: str = Field(min_length=1, max_length=100)
 
 class DeliveryFeeRequest(BaseModel):
-    delivery_fee: float = Field(ge=0, le=100000)
+    delivery_fee: float = Field(ge=0, le=100000, allow_inf_nan=False)
 
 class SupportTicketCreateRequest(BaseModel):
     subject: str = Field(min_length=2, max_length=180)

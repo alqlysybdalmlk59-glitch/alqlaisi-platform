@@ -33,14 +33,28 @@ def get_current_principal(
     if account_status != "active":
         raise HTTPException(status_code=403, detail="الحساب غير نشط أو موقوف.")
     role = (user.role or "").strip().upper()
-    store_id = getattr(user, "store_id", None)
-    if not store_id and role in {"VENDOR", "SELLER"}:
-        store = db.query(models.DBVendorStore).filter(
+    store_id = None
+    if role in {"VENDOR", "SELLER"}:
+        owned_store = db.query(models.DBVendorStore).filter(
             models.DBVendorStore.owner_user_id == str(user.id)
         ).first()
-        store_id = store.id if store else None
-    return {"id": str(user.id), "role": role, "email": user.email,
-            "name": user.name, "status": account_status, "store_id": store_id}
+        # Never grant tenant access from users.store_id alone. The current database
+        # ownership relationship and active store state are authoritative.
+        if (
+            owned_store is not None
+            and owned_store.status == "مفعل"
+            and getattr(user, "store_id", None) == owned_store.id
+        ):
+            store_id = owned_store.id
+
+    return {
+        "id": str(user.id),
+        "role": role,
+        "email": user.email,
+        "name": user.name,
+        "status": account_status,
+        "store_id": store_id,
+    }
 
 def require_roles(*roles: str):
     allowed = {role.upper() for role in roles}
