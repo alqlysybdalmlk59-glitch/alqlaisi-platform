@@ -153,10 +153,13 @@ fun ClientStoreCatalogView(
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("الكل") }
-    val categories = listOf("الكل", "أجهزة الكمبيوتر", "ملابس", "إلكترونيات", "الصحة والجمال", "مجوهرات ومشاهدة")
+    val categories = listOf("الكل", "دفاتر وكراسات", "أقلام وأدوات كتابة", "حقائب مدرسية", "كتب ومراجع", "ورق ومواد طباعة")
 
     val filteredProducts = products.filter { product ->
-        val matchesSearch = product.title.contains(searchQuery, ignoreCase = true) || product.vendorName.contains(searchQuery, ignoreCase = true)
+        val matchesSearch = product.title.contains(searchQuery, ignoreCase = true) ||
+            product.vendorName.contains(searchQuery, ignoreCase = true) ||
+            product.description.contains(searchQuery, ignoreCase = true) ||
+            product.category.contains(searchQuery, ignoreCase = true)
         val matchesCategory = selectedCategory == "الكل" || product.category == selectedCategory
         matchesSearch && matchesCategory
     }
