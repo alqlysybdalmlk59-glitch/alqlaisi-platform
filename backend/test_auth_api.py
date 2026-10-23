@@ -47,6 +47,7 @@ class TestAuthAPI(unittest.TestCase):
     def setUp(self):
         with self.TestSession() as db:
             db.query(models.DBSupportTicket).delete()
+            db.query(models.DBCustomerAddress).delete()
             db.query(models.DBVendorOwnershipHistory).delete()
             db.query(models.DBProductReview).delete()
             db.query(models.DBOrderStatusHistory).delete()
@@ -534,6 +535,46 @@ class TestAuthAPI(unittest.TestCase):
             saved = db.query(models.DBVendorStore).filter_by(id=store_id).first()
             self.assertEqual(saved.owner_user_id, user_id)
             self.assertEqual(saved.store_name, "متجر بعد التعديل")
+
+    def test_customer_address_book_is_account_scoped_and_keeps_one_default(self):
+        customer_token, _customer_id = self._register("777123510")
+        other_token, _other_id = self._register("777123511")
+        first = self.client.post("/api/customer/addresses",
+            headers={"Authorization": f"Bearer {customer_token}"},
+            json={"label": "المنزل", "recipient_name": "العميل الأول", "phone": "777123510",
+                "address": "صنعاء، حي الاختبار، شارع ألف", "notes": "بوابة البيت", "is_default": False})
+        self.assertEqual(first.status_code, 201, first.text)
+        self.assertTrue(first.json()["is_default"], "The first saved address must become the default.")
+        first_id = first.json()["id"]
+
+        second = self.client.post("/api/customer/addresses",
+            headers={"Authorization": f"Bearer {customer_token}"},
+            json={"label": "العمل", "recipient_name": "العميل الأول", "phone": "777123510",
+                "address": "صنعاء، شارع باء، مبنى العمل", "notes": "الدور الثاني", "is_default": True})
+        self.assertEqual(second.status_code, 201, second.text)
+        second_id = second.json()["id"]
+        self.assertTrue(second.json()["is_default"])
+
+        mine = self.client.get("/api/customer/addresses", headers={"Authorization": f"Bearer {customer_token}"})
+        self.assertEqual(mine.status_code, 200, mine.text)
+        self.assertEqual(len(mine.json()), 2)
+        self.assertEqual(sum(1 for address in mine.json() if address["is_default"]), 1)
+        self.assertEqual(mine.json()[0]["id"], second_id, "Default address should be listed first.")
+
+        other = self.client.get("/api/customer/addresses", headers={"Authorization": f"Bearer {other_token}"})
+        self.assertEqual(other.status_code, 200, other.text)
+        self.assertEqual(other.json(), [])
+        forbidden = self.client.delete(f"/api/customer/addresses/{second_id}",
+            headers={"Authorization": f"Bearer {other_token}"})
+        self.assertEqual(forbidden.status_code, 404, forbidden.text)
+
+        removed = self.client.delete(f"/api/customer/addresses/{second_id}",
+            headers={"Authorization": f"Bearer {customer_token}"})
+        self.assertEqual(removed.status_code, 200, removed.text)
+        after_delete = self.client.get("/api/customer/addresses", headers={"Authorization": f"Bearer {customer_token}"})
+        self.assertEqual(len(after_delete.json()), 1)
+        self.assertEqual(after_delete.json()[0]["id"], first_id)
+        self.assertTrue(after_delete.json()[0]["is_default"], "Deleting the default must promote the next saved address.")
 
     def test_admin_sales_insights_are_database_backed_and_role_protected(self):
         seller_token, admin_token, store, product_id = self._approved_store_and_product("777123501")

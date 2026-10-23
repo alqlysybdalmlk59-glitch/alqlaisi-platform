@@ -98,6 +98,27 @@ class OrderStatusHistorySchema(ORMModel):
     created_at: str
 
 
+class CustomerAddressRequest(BaseModel):
+    label: str = Field(default="المنزل", min_length=1, max_length=80)
+    recipient_name: str = Field(min_length=2, max_length=120)
+    phone: str = Field(min_length=7, max_length=20, pattern=r"^\\+?[0-9][0-9 ()-]{5,18}[0-9]$")
+    address: str = Field(min_length=5, max_length=1000)
+    notes: str = Field(default="", max_length=1000)
+    is_default: bool = False
+
+
+class CustomerAddressSchema(ORMModel):
+    id: str
+    label: str
+    recipient_name: str
+    phone: str
+    address: str
+    notes: str = ""
+    is_default: bool = False
+    created_at: str
+    updated_at: str
+
+
 class VendorStoreSchema(ORMModel):
     id: str
     store_name: str

@@ -23,7 +23,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.core.runtime_config import (IS_PRODUCTION, CORS_ORIGINS, ALLOWED_HOSTS, validate_production_configuration, validate_production_database_schema)
-from routers import auth, orders, products, support, users, vendors
+from routers import auth, customer_addresses, orders, products, support, users, vendors
 from routers.dependencies import get_db, require_admin, require_customer
 from schemas import CheckoutRequest, OrderSchema
 
@@ -72,6 +72,7 @@ async def security_headers(request: Request, call_next):
 # application object. The legacy auth routes fail closed; use /auth/* instead.
 app.include_router(products.router)
 app.include_router(orders.router)
+app.include_router(customer_addresses.router)
 app.include_router(vendors.router)
 app.include_router(support.router)
 app.include_router(users.router)
