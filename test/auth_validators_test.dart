@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/features/auth/validators/auth_validators.dart';
+import 'package:alqlaisi_customer/features/auth/validators/auth_validators.dart';
 
 void main() {
   group('AuthValidators.phone', () {
