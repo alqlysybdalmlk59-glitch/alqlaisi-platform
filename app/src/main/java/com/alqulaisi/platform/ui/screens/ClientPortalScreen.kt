@@ -28,6 +28,7 @@ fun ClientPortalScreen(onLogout: () -> Unit) {
     val publishedProducts = products.filter { it.reviewStatus == ProductReviewStatus.PUBLISHED }
     val cart by EcommerceRepository.cart.collectAsState()
     val orders by EcommerceRepository.orders.collectAsState()
+    val vendors by EcommerceRepository.vendors.collectAsState()
     val currentUser by EcommerceRepository.currentUser.collectAsState()
     var snackbarMessage by remember { mutableStateOf<String?>(null) }
     var selectedProductForDetail by remember { mutableStateOf<Product?>(null) }
@@ -111,16 +112,23 @@ fun ClientPortalScreen(onLogout: () -> Unit) {
                 )
                 3 -> CartView(
                     cart = cart,
+                    vendors = vendors,
                     onRemove = { EcommerceRepository.removeFromCart(it) },
                     onCheckout = {
                         val success = EcommerceRepository.checkout()
                         if (success) {
                             snackbarMessage = "تم إرسال الطلبات بنجاح وتقسيمها حسب المتاجر!"
-                            selectedTab = 2
+                            selectedTab = 4
+                        } else {
+                            snackbarMessage = "تعذر إرسال الطلب. تحقق من توفر المنتجات وأن سعر البيع معتمد."
                         }
                     }
                 )
-                4 -> ClientProfileView(currentUser)
+                4 -> ClientProfileView(
+                    currentUser = currentUser,
+                    orders = orders,
+                    onCancelOrder = { orderId -> EcommerceRepository.updateOrderStatus(orderId, OrderStatus.CANCELLED) }
+                )
             }
 
             selectedProductForDetail?.let { product ->
@@ -321,10 +329,18 @@ fun ProductDetailDialog(product: Product, onDismiss: () -> Unit, onAddToCart: ()
 }
 
 @Composable
-fun CartView(cart: List<CartItem>, onRemove: (String) -> Unit, onCheckout: () -> Unit) {
+fun CartView(
+    cart: List<CartItem>,
+    vendors: List<VendorStore>,
+    onRemove: (String) -> Unit,
+    onCheckout: () -> Unit
+) {
     val itemsByVendor = cart.groupBy { it.product.vendorId }
     val totalItemsPrice = cart.sumOf { it.product.price * it.quantity }
-    val totalDeliveryFee = itemsByVendor.size * 15.0
+    val deliveryFeeByVendor = itemsByVendor.keys.associateWith { vendorId ->
+        vendors.firstOrNull { it.id == vendorId }?.deliveryFee?.coerceAtLeast(0.0) ?: 15.0
+    }
+    val totalDeliveryFee = deliveryFeeByVendor.values.sum()
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         if (cart.isEmpty()) {
@@ -336,11 +352,12 @@ fun CartView(cart: List<CartItem>, onRemove: (String) -> Unit, onCheckout: () ->
                 items(itemsByVendor.keys.toList()) { vendorId ->
                     val vendorItems = itemsByVendor[vendorId] ?: emptyList()
                     val vendorName = vendorItems.firstOrNull()?.product?.vendorName ?: ""
+                    val deliveryFee = deliveryFeeByVendor[vendorId] ?: 15.0
 
                     Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                         Column(modifier = Modifier.padding(12.dp)) {
                             Text("طلب منفصل لمتجر: $vendorName", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                            Text("رسوم التوصيل: 15.0 ر.ي", fontSize = 12.sp)
+                            Text("رسوم التوصيل لهذا المتجر: $deliveryFee ر.ي", fontSize = 12.sp)
                             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
                             vendorItems.forEach { item ->
@@ -350,9 +367,17 @@ fun CartView(cart: List<CartItem>, onRemove: (String) -> Unit, onCheckout: () ->
                                         Text("الكمية: ${item.quantity} | ${item.product.price * item.quantity} ر.ي", fontSize = 12.sp)
                                     }
                                     IconButton(onClick = { onRemove(item.product.id) }) {
-                                        Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                                        Icon(Icons.Default.Delete, contentDescription = "حذف ${item.product.title}", tint = MaterialTheme.colorScheme.error)
                                     }
                                 }
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("مجموع منتجات المتجر")
+                                Text("${vendorItems.sumOf { it.product.price * it.quantity }} ر.ي")
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("الإجمالي مع التوصيل", fontWeight = FontWeight.SemiBold)
+                                Text("${vendorItems.sumOf { it.product.price * it.quantity } + deliveryFee} ر.ي", fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
@@ -387,17 +412,65 @@ fun CartView(cart: List<CartItem>, onRemove: (String) -> Unit, onCheckout: () ->
 }
 
 @Composable
-fun ClientProfileView(currentUser: User?) {
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(currentUser?.name ?: "مستخدم", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                Text(currentUser?.email ?: "", color = MaterialTheme.colorScheme.secondary)
-                Text("الهاتف: ${currentUser?.phone}", fontSize = 14.sp)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("العنوان: ${currentUser?.address}", fontSize = 14.sp)
+fun ClientProfileView(
+    currentUser: User?,
+    orders: List<Order>,
+    onCancelOrder: (String) -> Unit
+) {
+    val customerOrders = orders.filter { it.clientId == currentUser?.id }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(currentUser?.name ?: "مستخدم", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                    Text(currentUser?.email ?: "", color = MaterialTheme.colorScheme.secondary)
+                    Text("الهاتف: ${currentUser?.phone.orEmpty()}", fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("العنوان: ${currentUser?.address.orEmpty()}", fontSize = 14.sp)
+                }
+            }
+        }
+        item {
+            Text("طلباتي ومتابعة التوصيل", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+        }
+        if (customerOrders.isEmpty()) {
+            item {
+                Text("لا توجد طلبات مرتبطة بهذا الحساب حتى الآن.", color = MaterialTheme.colorScheme.secondary)
+            }
+        } else {
+            items(customerOrders, key = { it.id }) { order ->
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("طلب ${order.id}", fontWeight = FontWeight.Bold)
+                            Text(order.status.label, color = when (order.status) {
+                                OrderStatus.COMPLETED -> MaterialTheme.colorScheme.primary
+                                OrderStatus.CANCELLED -> MaterialTheme.colorScheme.error
+                                else -> MaterialTheme.colorScheme.secondary
+                            })
+                        }
+                        Text("المتجر: ${order.vendorName}")
+                        Text("العناصر: ${order.items.joinToString { "${it.product.title} × ${it.quantity}" }}")
+                        Text("قيمة المنتجات: ${order.itemsPrice} ر.ي")
+                        Text("رسوم التوصيل: ${order.deliveryFee} ر.ي")
+                        Text("الإجمالي عند الاستلام: ${order.totalPrice} ر.ي", fontWeight = FontWeight.SemiBold)
+                        Text("تاريخ الطلب: ${order.date}", color = MaterialTheme.colorScheme.secondary, fontSize = 12.sp)
+                        if (order.status == OrderStatus.PENDING) {
+                            OutlinedButton(onClick = { onCancelOrder(order.id) }) {
+                                Text("إلغاء الطلب")
+                            }
+                        }
+                    }
+                }
             }
         }
     }
