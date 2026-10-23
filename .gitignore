@@ -3,6 +3,13 @@
 .env.*
 !.env.example
 
+# Local databases may contain customer data; never commit development database files.
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+
 # Python
 __pycache__/
 *.py[cod]
