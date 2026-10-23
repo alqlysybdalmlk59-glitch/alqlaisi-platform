@@ -18,23 +18,39 @@ enum class ProductReviewStatus {
     DRAFT, PENDING_REVIEW, PUBLISHED, REJECTED
 }
 
+/**
+ * The order workflow is deliberately explicit so screens and repository rules
+ * cannot silently create misspelled status labels.
+ */
+enum class OrderStatus(val label: String) {
+    PENDING("بانتظار القبول"),
+    ACCEPTED("مقبولة وقيد التجهيز"),
+    DELIVERING("للتوصيل"),
+    COMPLETED("تم الاستلام"),
+    CANCELLED("ملغي")
+}
+
 data class Product(
     val id: String,
     val title: String,
     val description: String,
+    /** Final customer-facing price; the administrator sets it during approval. */
     val price: Double,
     val imageUrl: String,
     val vendorId: String,
     val vendorName: String,
     val category: String,
-    val isAvailable: Boolean = true, // متاح / غير متاح مؤقتاً (بدون كميات مخزون)
+    /** Manual availability only: this is not an inventory quantity. */
+    val isAvailable: Boolean = true,
     val reviewStatus: ProductReviewStatus = ProductReviewStatus.PUBLISHED,
-    val adminNotes: String = ""
+    val adminNotes: String = "",
+    /** Purchase price agreed with the seller; never used as the customer price. */
+    val purchasePrice: Double? = null
 )
 
 data class CartItem(
     val product: Product,
-    var quantity: Int
+    val quantity: Int
 )
 
 data class Order(
@@ -49,7 +65,7 @@ data class Order(
     val totalPrice: Double,
     val paymentMethod: String = "الدفع عند الاستلام",
     val address: String,
-    val status: String, // "بانتظار القبول", "مقبولة وقيد التجهيز", "للتوصيل", "تم الاستلام", "ملغي"
+    val status: OrderStatus,
     val date: String
 )
 
@@ -61,7 +77,9 @@ data class VendorStore(
     val logoUrl: String,
     val description: String,
     val status: String, // "مفعل", "قيد المراجعة", "مرفوض"
-    val adminNotes: String = ""
+    val adminNotes: String = "",
+    val ownerId: String = "",
+    val deliveryFee: Double = 15.0
 )
 
 data class SupportTicket(
