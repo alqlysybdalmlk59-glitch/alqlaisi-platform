@@ -64,6 +64,25 @@ flutter build apk --debug --dart-define=API_BASE_URL=http://10.0.2.2:8000/api
 
 النموذج الأصلي Jetpack Compose (مجلد `app/`) مشروع Android منفصل؛ بناءه لا يبني تطبيق Flutter الخاص بالعميل.
 
+## إنشاء حساب مدير للتجربة المحلية
+
+لا ينشئ الخادم حساب مدير افتراضياً، ولا توجد كلمة مرور إدارية عامة داخل المستودع. بعد تشغيل الخادم مرة واحدة، افتح PowerShell في جذر المشروع وشغّل الأمر التالي باستخدام البيئة المحلية:
+
+```powershell
+.\.venv\Scripts\python.exe -m backend.create_admin --name "مدير منصة القليسي" --phone "9677XXXXXXXX" --email "admin@example.com"
+```
+
+استبدل رقم الهاتف والبريد بقيمك الحقيقية. سيطلب السكربت كلمة مرور بطول 14 حرفاً على الأقل ويخفيها أثناء الإدخال. لا تضع كلمة المرور في الأمر أو في Git. استخدم هذا الحساب للوحة الإدارة، وليس لتسجيل الدخول كتطبيق عميل.
+
+## معرّفات تطبيق Android
+
+المعرّفات الحالية مختلفة حسب التطبيق:
+- تطبيق العميل Flutter: `com.example.alqulaisi_platform` داخل `android/app/build.gradle.kts`؛ ما زال معرّفاً افتراضياً ويجب اعتماد معرّف نهائي قبل إعداد Google OAuth أو نشر Release.
+- تطبيق البائع Flutter: `com.alqlaisi.seller`.
+- نموذج Jetpack Compose المستقل في `app/`: `com.alqlaisi.platform`، وهو ليس تطبيق العميل Flutter.
+
+هذا الاختلاف لا يمنع بناء Debug، لكنه مهم عند إنشاء OAuth clients وبصمات SHA-1. لا تُنشئ إعداد OAuth لتطبيق العميل على أساس معرّف نموذج Compose.
+
 ## النشر الفعلي
 
 قبل الإنتاج، يلزم عنوان API عام عبر HTTPS، وقاعدة PostgreSQL مع TLS، وJWT secret قوي، وقيم CORS والمضيفين والـ proxies الصحيحة، وإعداد Google OAuth وتوقيع Release. نجاح الاختبارات وبناء Debug لا يثبت أن OAuth الحقيقي أو الاستضافة الإنتاجية جاهزان.
