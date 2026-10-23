@@ -30,7 +30,7 @@ fun AdminPortalScreen(onLogout: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(when(selectedTab) { 0 -> "المتاجر والمنتجات"; 1 -> "التوصيل والطلبات"; 2 -> "تذاكر الدعم والشكاوى"; else -> "مساعد Gemini AI والرؤى" }) },
+                title = { Text(when(selectedTab) { 0 -> "المتاجر والمنتجات"; 1 -> "التوصيل والطلبات"; 2 -> "تذاكر الدعم والشكاوى"; else -> "مساعد التحليل المحلي" }) },
                 actions = {
                     IconButton(onClick = onLogout) {
                         Icon(Icons.Default.ExitToApp, contentDescription = "تسجيل خروج")
@@ -62,7 +62,7 @@ fun AdminPortalScreen(onLogout: () -> Unit) {
                     selected = selectedTab == 3,
                     onClick = { selectedTab = 3 },
                     icon = { Icon(Icons.Default.SmartToy, contentDescription = null) },
-                    label = { Text("الذكاء الاصطناعي") }
+                    label = { Text("التحليلات") }
                 )
             }
         }
@@ -376,5 +376,49 @@ fun AdminSupportTicketsView(tickets: List<SupportTicket>, onRespond: (String, St
                 TextButton(onClick = { selectedTicketId = null }) { Text("إلغاء") }
             }
         )
+    }
+}
+
+
+@Composable
+fun AiAssistantView(
+    query: String,
+    response: String,
+    onQueryChange: (String) -> Unit,
+    onAsk: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("مساعد التحليل المحلي", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+        Text(
+            "يعرض هذا القسم ملخصاً من بيانات العرض التجريبية. لا توجد خدمة Gemini متصلة في هذه النسخة.",
+            color = MaterialTheme.colorScheme.secondary
+        )
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            label = { Text("اكتب سؤالاً عن مؤشرات المنصة") },
+            placeholder = { Text("مثال: كم طلباً اكتمل؟") },
+            minLines = 2,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Button(
+            onClick = onAsk,
+            enabled = query.isNotBlank(),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Default.Analytics, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("عرض ملخص البيانات التجريبية")
+        }
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("النتيجة", fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(response)
+            }
+        }
     }
 }
