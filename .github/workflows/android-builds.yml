@@ -59,6 +59,40 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  seller-flutter:
+    name: Seller Flutter Android build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: seller_app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.44.4"
+          cache: true
+      - name: Install seller dependencies
+        run: flutter pub get
+      - name: Analyze seller app
+        run: flutter analyze
+      - name: Build seller Android debug APK
+        run: flutter build apk --debug --dart-define=API_BASE_URL=http://10.0.2.2:8000/api
+      - name: Upload seller APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: alqlaisi-seller-debug-apk
+          path: seller_app/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
   native-android:
     name: Native Android Studio app build
     runs-on: ubuntu-latest
