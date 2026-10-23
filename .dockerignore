@@ -1,0 +1,58 @@
+# Environment secrets; never embed developer or production credentials in an image.
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+
+# Databases, local files and backups.
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.sql.gz
+backups/
+**/backups/
+
+# Python caches and virtual environments.
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Flutter/Android generated output and signing keys.
+.dart_tool/
+.packages
+.pub-cache/
+build/
+**/build/
+.gradle/
+**/.gradle/
+local.properties
+**/local.properties
+*.jks
+*.keystore
+key.properties
+**/key.properties
+*.aab
+*.apk
+*.ipa
+
+# JavaScript dependencies and generated assets.
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+
+# Editors, operating-system files and logs.
+.idea/
+.vscode/
+*.iml
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini

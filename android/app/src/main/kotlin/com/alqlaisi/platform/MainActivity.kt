@@ -1,4 +1,4 @@
-package com.example.alqulaisi_platform
+package com.alqlaisi.platform
 
 import io.flutter.embedding.android.FlutterActivity
 

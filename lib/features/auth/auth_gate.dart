@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../core/network/api_client.dart';
+import '../../core/cart/cart_scope.dart';
+import '../../core/network/api_endpoints.dart';
 import '../../core/theme/app_theme.dart';
 import '../shell/customer_shell.dart';
+import '../favorites/favorites_store.dart';
 import 'login_page.dart';
 import 'models/auth_user.dart';
 import 'register_page.dart';
@@ -36,14 +39,25 @@ class _AuthGateState extends State<AuthGate> {
       storage: SessionStorage(),
     );
 
-    _restoreSession();
+    if (ApiEndpoints.configurationError == null) {
+      _restoreSession();
+    } else {
+      _starting = false;
+    }
   }
 
   Future<void> _restoreSession() async {
     try {
       await _sessionController.restoreSession();
+      final user = _sessionController.user;
+      if (user != null) {
+        await FavoritesStore.instance.selectAccount(user.id);
+      } else {
+        await FavoritesStore.instance.clearActiveAccount();
+      }
     } catch (_) {
-      // Ignore session restore error on start
+      // A storage failure must not restore a stale account's favourites.
+      await FavoritesStore.instance.clearActiveAccount();
     } finally {
       if (mounted) {
         setState(() => _starting = false);
@@ -54,6 +68,11 @@ class _AuthGateState extends State<AuthGate> {
   Future<void> _onAuthenticated(AuthSession session) async {
     try {
       await _sessionController.acceptSession(session);
+      try {
+        await FavoritesStore.instance.selectAccount(session.user.id);
+      } catch (_) {
+        // The session is valid even when device storage for favourites is unavailable.
+      }
 
       if (!mounted) return;
 
@@ -71,6 +90,15 @@ class _AuthGateState extends State<AuthGate> {
     }
   }
 
+
+
+  Future<void> _logout() async {
+    CartScope.of(context).clear();
+    await FavoritesStore.instance.clearActiveAccount();
+    await _sessionController.logout();
+    if (mounted) setState(() { _showRegister = false; });
+  }
+
   @override
   void dispose() {
     _sessionController.dispose();
@@ -80,6 +108,32 @@ class _AuthGateState extends State<AuthGate> {
 
   @override
   Widget build(BuildContext context) {
+    final configurationError = ApiEndpoints.configurationError;
+    if (configurationError != null) {
+      return Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 500),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.security, size: 56, color: AppTheme.error),
+                    const SizedBox(height: 16),
+                    const Text('إعداد الاتصال غير مكتمل',
+                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 12),
+                    Text(configurationError, textAlign: TextAlign.center),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     if (_starting) {
       return const Scaffold(
         body: Center(
@@ -91,7 +145,13 @@ class _AuthGateState extends State<AuthGate> {
     }
 
     if (_sessionController.isAuthenticated) {
-      return const CustomerShell();
+      if (_sessionController.user?.role == 'customer') {
+        return CustomerShell(accessToken: _sessionController.token ?? '', userId: _sessionController.user?.id ?? '', onLogout: _logout);
+      }
+      return _AccountRoleNotice(
+        role: _sessionController.user?.role ?? 'unknown',
+        onLogout: _logout,
+      );
     }
 
     if (_showRegister) {
@@ -108,6 +168,47 @@ class _AuthGateState extends State<AuthGate> {
       onRegister: () {
         setState(() => _showRegister = true);
       },
+    );
+  }
+}
+
+
+class _AccountRoleNotice extends StatelessWidget {
+  const _AccountRoleNotice({required this.role, required this.onLogout});
+  final String role;
+  final Future<void> Function() onLogout;
+
+  @override
+  Widget build(BuildContext context) {
+    final isSeller = role == 'seller';
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(isSeller ? Icons.storefront : Icons.admin_panel_settings,
+                    size: 64, color: AppTheme.primary),
+                  const SizedBox(height: 16),
+                  Text(isSeller ? 'تم ربط حسابك بمتجر بائع' : 'هذا الحساب ليس حساب عميل',
+                    style: Theme.of(context).textTheme.headlineSmall, textAlign: TextAlign.center),
+                  const SizedBox(height: 12),
+                  Text(isSeller
+                    ? 'استخدم تطبيق البائع لإدارة منتجات متجرك وطلباته. أعد فتح تطبيق البائع بعد اعتماد المتجر.'
+                    : 'يرجى فتح الواجهة المخصصة لهذا الدور أو استخدام حساب عميل.',
+                    textAlign: TextAlign.center),
+                  const SizedBox(height: 18),
+                  FilledButton(onPressed: onLogout, child: const Text('تسجيل الخروج')),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -1,0 +1,798 @@
+"""Integration tests for the customer authentication API using an isolated SQLite DB."""
+import os
+import unittest
+from unittest.mock import patch
+
+os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-not-for-production-0123456789")
+
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from backend.app.main import app
+import models
+import database
+from routers import auth, dependencies
+
+
+class TestAuthAPI(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        cls.TestSession = sessionmaker(autocommit=False, autoflush=False, bind=cls.engine)
+        models.Base.metadata.create_all(bind=cls.engine)
+
+        def override_get_db():
+            db = cls.TestSession()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[auth.get_db] = override_get_db
+        app.dependency_overrides[dependencies.get_db] = override_get_db
+        app.dependency_overrides[database.get_db] = override_get_db
+        cls.client = TestClient(app)
+
+    @classmethod
+    def tearDownClass(cls):
+        app.dependency_overrides.clear()
+        cls.engine.dispose()
+
+    def setUp(self):
+        with self.TestSession() as db:
+            db.query(models.DBSupportTicket).delete()
+            db.query(models.DBVendorOwnershipHistory).delete()
+            db.query(models.DBProductReview).delete()
+            db.query(models.DBOrderStatusHistory).delete()
+            db.query(models.DBOrder).delete()
+            db.query(models.DBProduct).delete()
+            db.query(models.DBVendorStore).delete()
+            db.query(models.DBUser).delete()
+            db.commit()
+
+    def test_register_login_and_me(self):
+        response = self.client.post("/auth/register", json={
+            "full_name": "عميل تجريبي",
+            "phone": "777123456",
+            "password": "SecurePass123",
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        body = response.json()
+        self.assertEqual(body["user"]["role"], "customer")
+        self.assertTrue(body["access_token"])
+        self.assertIsNone(body["user"]["email"])
+
+        login = self.client.post("/auth/login", json={
+            "phone": "777123456",
+            "password": "SecurePass123",
+        })
+        self.assertEqual(login.status_code, 200, login.text)
+        token = login.json()["access_token"]
+
+        me = self.client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(me.status_code, 200, me.text)
+        self.assertEqual(me.json()["phone"], "777123456")
+
+    def test_business_routes_require_authentication(self):
+        self.assertEqual(self.client.get("/api/vendors/").status_code, 401)
+        self.assertEqual(self.client.post("/api/orders/checkout", json={
+            "recipient_name": "اختبار عميل", "phone": "777000000",
+            "delivery_address": "صنعاء الحي الشارع", "items": [{"product_id": "p1", "quantity": 1}],
+        }).status_code, 401)
+        self.assertEqual(self.client.get("/api/support/").status_code, 401)
+
+    def test_customer_cannot_access_admin_vendor_list(self):
+        response = self.client.post("/auth/register", json={
+            "full_name": "عميل تجريبي",
+            "phone": "777123460",
+            "password": "SecurePass123",
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        token = response.json()["access_token"]
+        result = self.client.get("/api/vendors/", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(result.status_code, 403, result.text)
+
+    def _register(self, phone):
+        response = self.client.post("/auth/register", json={
+            "full_name": "مستخدم تجريبي", "phone": phone, "password": "SecurePass123",
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()["access_token"], response.json()["user"]["id"]
+
+    def _admin_token(self):
+        with self.TestSession() as db:
+            admin = db.query(models.DBUser).filter_by(id="admin_test").first()
+            if admin is None:
+                admin = models.DBUser(id="admin_test", name="مدير الاختبار",
+                    email="admin-test@example.com", role="ADMIN", phone="700000000",
+                    address="", password_hash=None, status="active")
+                db.add(admin)
+                db.commit()
+                db.refresh(admin)
+            return auth._session(admin)["access_token"]
+
+    def _approved_store_and_product(self, seller_phone="777123470"):
+        seller_token, _ = self._register(seller_phone)
+        admin_token = self._admin_token()
+        app_response = self.client.post("/api/vendors/register",
+            headers={"Authorization": f"Bearer {seller_token}"},
+            json={"store_name": "متجر اختبار", "phone": seller_phone, "description": "اختبار"})
+        self.assertEqual(app_response.status_code, 201, app_response.text)
+        store = app_response.json()
+        approved = self.client.put(f"/api/vendors/{store['id']}/approve",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(approved.status_code, 200, approved.text)
+        created = self.client.post("/api/products/",
+            headers={"Authorization": f"Bearer {seller_token}"},
+            json={"title": "دفتر اختبار", "description": "وصف", "image_url": "",
+                  "category": "قرطاسية", "price": 1, "vendor_id": "forged-store",
+                  "review_status": "منشور", "is_available": True})
+        self.assertEqual(created.status_code, 201, created.text)
+        product = created.json()
+        self.assertEqual(product["vendor_id"], store["id"])
+        self.assertEqual(product["price"], 0)
+        self.assertEqual(product["review_status"], "قيد المراجعة")
+        priced = self.client.put(f"/api/products/{product['id']}/approve",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"sale_price": 175, "approved": True, "admin_notes": "سعر الإدارة"})
+        self.assertEqual(priced.status_code, 200, priced.text)
+        available = self.client.put(f"/api/products/{product['id']}/availability",
+            headers={"Authorization": f"Bearer {seller_token}"}, json={"is_available": True})
+        self.assertEqual(available.status_code, 200, available.text)
+        return seller_token, admin_token, store, product["id"]
+
+    def test_vendor_application_binds_owner_and_approval_promotes_role(self):
+        customer_token, user_id = self._register("777123461")
+        admin_token = self._admin_token()
+        response = self.client.post("/api/vendors/register",
+            headers={"Authorization": f"Bearer {customer_token}"},
+            json={"store_name": "متجر عبد", "phone": "777123461", "description": "طلب"})
+        self.assertEqual(response.status_code, 201, response.text)
+        store = response.json()
+        with self.TestSession() as db:
+            saved = db.query(models.DBVendorStore).filter_by(id=store["id"]).first()
+            self.assertEqual(saved.owner_user_id, user_id)
+        approved = self.client.put(f"/api/vendors/{store['id']}/approve",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(approved.status_code, 200, approved.text)
+        me = self.client.get("/auth/me", headers={"Authorization": f"Bearer {customer_token}"})
+        self.assertEqual(me.status_code, 200, me.text)
+        self.assertEqual(me.json()["role"], "seller")
+        self.assertEqual(me.json()["store_id"], store["id"])
+
+    def test_checkout_uses_server_prices_and_fee_not_client_values(self):
+        seller_token, _admin, store, product_id = self._approved_store_and_product()
+        buyer_token, buyer_id = self._register("777123471")
+        response = self.client.post("/api/checkout",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+            json={"recipient_name": "عميل الطلب", "phone": "777999000",
+                "delivery_address": "صنعاء، الحي، الشارع", "notes": "",
+                "payment_method": "cash_on_delivery",
+                "items": [{"product_id": product_id, "quantity": 2, "price": 0.5}],
+                "total_price": 1, "delivery_fee": 0})
+        self.assertEqual(response.status_code, 201, response.text)
+        order = response.json()[0]
+        self.assertEqual(order["client_id"], buyer_id)
+        self.assertEqual(order["vendor_id"], store["id"])
+        self.assertEqual(order["items_price"], 350)
+        self.assertEqual(order["delivery_fee"], 15)
+        self.assertEqual(order["total_price"], 365)
+        self.assertEqual(order["payment_method"], "الدفع عند الاستلام")
+        self.assertEqual(order["status"], "بانتظار القبول")
+        listed = self.client.get(f"/api/orders/vendor/{store['id']}",
+            headers={"Authorization": f"Bearer {seller_token}"})
+        self.assertEqual(listed.status_code, 200, listed.text)
+        self.assertEqual(len(listed.json()), 1)
+        status_update = self.client.put(
+            f"/api/orders/{order['id']}/status?status=قيد التجهيز",
+            headers={"Authorization": f"Bearer {seller_token}"},
+        )
+        self.assertEqual(status_update.status_code, 200, status_update.text)
+        history = self.client.get(
+            f"/api/orders/{order['id']}/history",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+        )
+        self.assertEqual(history.status_code, 200, history.text)
+        self.assertEqual(len(history.json()), 2)
+        self.assertIsNone(history.json()[0]["old_status"])
+        self.assertEqual(history.json()[0]["new_status"], "بانتظار القبول")
+        self.assertEqual(history.json()[1]["old_status"], "بانتظار القبول")
+        self.assertEqual(history.json()[1]["new_status"], "قيد التجهيز")
+        other_token, _ = self._register("777123490")
+        forbidden = self.client.get(
+            f"/api/orders/{order['id']}/history",
+            headers={"Authorization": f"Bearer {other_token}"},
+        )
+        self.assertEqual(forbidden.status_code, 403)
+
+        notifications = self.client.get(
+            "/api/orders/notifications/mine",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+        )
+        self.assertEqual(notifications.status_code, 200, notifications.text)
+        self.assertEqual(len(notifications.json()), 2)
+        self.assertEqual(notifications.json()[0]["status"], "قيد التجهيز")
+        self.assertEqual(notifications.json()[1]["status"], "بانتظار القبول")
+
+        before_delivery = self.client.post(
+            f"/api/orders/{order['id']}/reviews",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+            json={"product_id": product_id, "rating": 5, "comment": "تجربة"},
+        )
+        self.assertEqual(before_delivery.status_code, 409, before_delivery.text)
+
+        delivered = self.client.put(
+            f"/api/orders/{order['id']}/status?status=تم التسليم",
+            headers={"Authorization": f"Bearer {_admin}"},
+        )
+        self.assertEqual(delivered.status_code, 200, delivered.text)
+
+        review = self.client.post(
+            f"/api/orders/{order['id']}/reviews",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+            json={"product_id": product_id, "rating": 5, "comment": "منتج جيد"},
+        )
+        self.assertEqual(review.status_code, 201, review.text)
+        self.assertEqual(review.json()["rating"], 5)
+        public_reviews = self.client.get(f"/api/products/{product_id}/reviews")
+        self.assertEqual(public_reviews.status_code, 200, public_reviews.text)
+        self.assertEqual(len(public_reviews.json()), 1)
+        self.assertEqual(public_reviews.json()[0]["reviewer_name"], "مستخدم")
+
+        duplicate = self.client.post(
+            f"/api/orders/{order['id']}/reviews",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+            json={"product_id": product_id, "rating": 4, "comment": "مكرر"},
+        )
+        self.assertEqual(duplicate.status_code, 409, duplicate.text)
+
+        other_client = self.client.post(
+            f"/api/orders/{order['id']}/reviews",
+            headers={"Authorization": f"Bearer {other_token}"},
+            json={"product_id": product_id, "rating": 5, "comment": "غير مصرح"},
+        )
+        self.assertIn(other_client.status_code, {403, 404})
+
+    def test_seller_cannot_access_another_store_products(self):
+        seller_a, _admin, _store_a, _product_a = self._approved_store_and_product("777123472")
+        seller_b_token, _ = self._register("777123473")
+        admin_b = self._admin_token()
+        app_b = self.client.post("/api/vendors/register",
+            headers={"Authorization": f"Bearer {seller_b_token}"},
+            json={"store_name": "متجر ثان", "phone": "777123473", "description": ""})
+        self.assertEqual(app_b.status_code, 201, app_b.text)
+        store_b = app_b.json()
+        approved = self.client.put(f"/api/vendors/{store_b['id']}/approve",
+            headers={"Authorization": f"Bearer {admin_b}"})
+        self.assertEqual(approved.status_code, 200, approved.text)
+        response = self.client.get(f"/api/products/vendor/{store_b['id']}",
+            headers={"Authorization": f"Bearer {seller_a}"})
+        self.assertEqual(response.status_code, 403, response.text)
+
+    def test_seller_sales_summary_is_store_scoped_and_does_not_invent_commission(self):
+        seller_token, admin_token, store, product_id = self._approved_store_and_product("777123497")
+        buyer_token, _buyer_id = self._register("777123498")
+        checkout = self.client.post(
+            "/api/checkout",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+            json={
+                "recipient_name": "عميل التقرير",
+                "phone": "777000444",
+                "delivery_address": "صنعاء، الحي، الشارع",
+                "items": [{"product_id": product_id, "quantity": 1}],
+            },
+        )
+        self.assertEqual(checkout.status_code, 201, checkout.text)
+        order_id = checkout.json()[0]["id"]
+        delivered = self.client.put(
+            f"/api/orders/{order_id}/status?status=تم التسليم",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        self.assertEqual(delivered.status_code, 200, delivered.text)
+
+        summary = self.client.get(
+            f"/api/orders/vendor/{store['id']}/summary",
+            headers={"Authorization": f"Bearer {seller_token}"},
+        )
+        self.assertEqual(summary.status_code, 200, summary.text)
+        body = summary.json()
+        self.assertEqual(body["store_id"], store["id"])
+        self.assertEqual(body["order_count"], 1)
+        self.assertEqual(body["delivered_count"], 1)
+        self.assertEqual(body["delivered_gross_value"], 190)
+        self.assertEqual(body["currency"], "YER")
+        self.assertFalse(body["commission_configured"])
+        self.assertIsNone(body["commission_percent"])
+        self.assertIsNone(body["commission_value"])
+
+        other_store_response = self.client.get(
+            "/api/orders/vendor/not-this-store/summary",
+            headers={"Authorization": f"Bearer {seller_token}"},
+        )
+        self.assertEqual(other_store_response.status_code, 403, other_store_response.text)
+
+    def test_seller_access_requires_current_two_way_store_ownership(self):
+        seller_token, _admin_token, store, _product_id = self._approved_store_and_product("777123494")
+        with self.TestSession() as db:
+            owner = db.query(models.DBUser).filter_by(id="u_777123494").first()
+            owner.store_id = "forged-or-stale-store-id"
+            db.commit()
+
+        products = self.client.get(
+            f"/api/products/vendor/{store['id']}",
+            headers={"Authorization": f"Bearer {seller_token}"},
+        )
+        self.assertEqual(products.status_code, 403, products.text)
+
+        public_stores = self.client.get("/api/vendors/public")
+        self.assertNotIn(store["id"], [row["id"] for row in public_stores.json()])
+
+        checkout_buyer, _ = self._register("777123495")
+        checkout = self.client.post(
+            "/api/checkout",
+            headers={"Authorization": f"Bearer {checkout_buyer}"},
+            json={
+                "recipient_name": "مشتري الاختبار",
+                "phone": "777000123",
+                "delivery_address": "صنعاء، الحي، الشارع",
+                "items": [{"product_id": _product_id, "quantity": 1}],
+            },
+        )
+        self.assertEqual(checkout.status_code, 409, checkout.text)
+
+    def test_admin_cannot_transfer_store_to_another_account_through_owner_link(self):
+        _seller_token, admin_token, store, _product_id = self._approved_store_and_product("777123486")
+        _other_token, other_user_id = self._register("777123487")
+        response = self.client.put(
+            f"/api/vendors/{store['id']}/owner",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"user_id": other_user_id, "verification_note": "تم التحقق من الهوية للمراجعة الإدارية."},
+        )
+        self.assertEqual(response.status_code, 409, response.text)
+        with self.TestSession() as db:
+            current = db.query(models.DBVendorStore).filter_by(id=store["id"]).first()
+            self.assertEqual(current.owner_user_id, "u_777123486")
+
+    def test_seller_product_edits_force_admin_reapproval_and_ignore_forged_fields(self):
+        seller_token, _admin_token, store, product_id = self._approved_store_and_product("777123510")
+        response = self.client.put(
+            f"/api/products/{product_id}",
+            headers={"Authorization": f"Bearer {seller_token}"},
+            json={
+                "title": "دفتر بعد التعديل",
+                "description": "وصف محدث",
+                "image_url": "https://example.invalid/product.png",
+                "category": "قرطاسية",
+                "price": 1,
+                "vendor_id": "attacker-store",
+                "is_available": True,
+                "review_status": "منشور",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        item = response.json()
+        self.assertEqual(item["title"], "دفتر بعد التعديل")
+        self.assertEqual(item["vendor_id"], store["id"])
+        self.assertEqual(item["price"], 0)
+        self.assertEqual(item["review_status"], "قيد المراجعة")
+        self.assertFalse(item["is_available"])
+        with self.TestSession() as db:
+            saved = db.query(models.DBProduct).filter_by(id=product_id).first()
+            self.assertEqual(saved.vendor_id, store["id"])
+            self.assertEqual(saved.price, 0)
+            self.assertEqual(saved.review_status, "قيد المراجعة")
+            self.assertFalse(saved.is_available)
+
+    def test_legacy_store_owner_link_requires_review_note_and_is_audited(self):
+        _token, user_id = self._register("777123491")
+        admin_token = self._admin_token()
+        with self.TestSession() as db:
+            db.add(models.DBVendorStore(
+                id="legacy_store_unowned", store_name="متجر قديم", owner_name="مالك قديم",
+                phone="777123491", description="", status="قيد المراجعة",
+                admin_notes="", owner_user_id=None, delivery_fee=15,
+            ))
+            db.commit()
+        missing_note = self.client.put(
+            "/api/vendors/legacy_store_unowned/owner",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"user_id": user_id},
+        )
+        self.assertEqual(missing_note.status_code, 422, missing_note.text)
+        linked = self.client.put(
+            "/api/vendors/legacy_store_unowned/owner",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"user_id": user_id, "verification_note": "تمت مراجعة بيانات المالك يدوياً."},
+        )
+        self.assertEqual(linked.status_code, 200, linked.text)
+        history = self.client.get(
+            "/api/vendors/legacy_store_unowned/ownership-history",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        self.assertEqual(history.status_code, 200, history.text)
+        self.assertEqual(len(history.json()), 1)
+        self.assertEqual(history.json()[0]["actor_user_id"], "admin_test")
+        self.assertEqual(history.json()[0]["new_owner_user_id"], user_id)
+        self.assertEqual(history.json()[0]["action"], "legacy_owner_linked")
+        self.assertIn("مراجعة", history.json()[0]["verification_note"])
+
+    def test_temporary_store_suspension_preserves_owner_link_and_can_be_restored(self):
+        seller_token, admin_token, store, _product_id = self._approved_store_and_product("777123492")
+        suspended = self.client.put(f"/api/vendors/{store['id']}/suspend",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(suspended.status_code, 200, suspended.text)
+        public = self.client.get("/api/vendors/public")
+        self.assertNotIn(store["id"], [row["id"] for row in public.json()])
+        seller_products = self.client.get(f"/api/products/vendor/{store['id']}",
+            headers={"Authorization": f"Bearer {seller_token}"})
+        self.assertEqual(seller_products.status_code, 403, seller_products.text)
+        with self.TestSession() as db:
+            owner = db.query(models.DBUser).filter_by(id="u_777123492").first()
+            saved_store = db.query(models.DBVendorStore).filter_by(id=store["id"]).first()
+            self.assertEqual(owner.role, "VENDOR")
+            self.assertEqual(owner.store_id, store["id"])
+            self.assertEqual(saved_store.owner_user_id, owner.id)
+        restored = self.client.put(f"/api/vendors/{store['id']}/restore",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(restored.status_code, 200, restored.text)
+        public_after = self.client.get("/api/vendors/public")
+        self.assertIn(store["id"], [row["id"] for row in public_after.json()])
+        history = self.client.get(f"/api/vendors/{store['id']}/ownership-history",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(history.status_code, 200, history.text)
+        self.assertEqual([row["action"] for row in history.json()],
+            ["application_submitted", "store_approved", "store_suspended", "store_restored"])
+
+    def test_store_rejection_cannot_be_used_to_suspend_an_active_store(self):
+        _seller, admin_token, store, _product = self._approved_store_and_product("777123493")
+        response = self.client.put(f"/api/vendors/{store['id']}/reject?reason=Test",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(response.status_code, 409, response.text)
+
+    def test_admin_can_suspend_account_and_public_store_disappears(self):
+        seller_token, seller_id = self._register("777123489")
+        admin_token = self._admin_token()
+        application = self.client.post(
+            "/api/vendors/register",
+            headers={"Authorization": f"Bearer {seller_token}"},
+            json={"store_name": "متجر حساب سيوقف", "phone": "777123489", "description": ""},
+        )
+        self.assertEqual(application.status_code, 201, application.text)
+        store = application.json()
+        approval = self.client.put(
+            f"/api/vendors/{store['id']}/approve",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        self.assertEqual(approval.status_code, 200, approval.text)
+        before = self.client.get("/api/vendors/public")
+        self.assertIn(store["id"], [item["id"] for item in before.json()])
+
+        suspended = self.client.put(
+            f"/api/users/{seller_id}/status",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"status": "suspended"},
+        )
+        self.assertEqual(suspended.status_code, 200, suspended.text)
+        current = self.client.get(
+            "/auth/me", headers={"Authorization": f"Bearer {seller_token}"}
+        )
+        self.assertEqual(current.status_code, 403)
+        after = self.client.get("/api/vendors/public")
+        self.assertNotIn(store["id"], [item["id"] for item in after.json()])
+
+    def test_rejected_store_can_be_resubmitted_without_changing_owner_link(self):
+        customer_token, user_id = self._register("777123482")
+        admin_token = self._admin_token()
+        first = self.client.post("/api/vendors/register",
+            headers={"Authorization": f"Bearer {customer_token}"},
+            json={"store_name": "متجر يحتاج مراجعة", "phone": "777123482", "description": "الأول"})
+        self.assertEqual(first.status_code, 201, first.text)
+        store_id = first.json()["id"]
+        rejected = self.client.put(f"/api/vendors/{store_id}/reject",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(rejected.status_code, 200, rejected.text)
+        second = self.client.post("/api/vendors/register",
+            headers={"Authorization": f"Bearer {customer_token}"},
+            json={"store_name": "متجر بعد التعديل", "phone": "777123483", "description": "بعد معالجة الملاحظات"})
+        self.assertEqual(second.status_code, 201, second.text)
+        self.assertEqual(second.json()["id"], store_id)
+        self.assertEqual(second.json()["status"], "قيد المراجعة")
+        with self.TestSession() as db:
+            saved = db.query(models.DBVendorStore).filter_by(id=store_id).first()
+            self.assertEqual(saved.owner_user_id, user_id)
+            self.assertEqual(saved.store_name, "متجر بعد التعديل")
+
+    def test_google_login_uses_configured_web_client_id_as_token_audience(self):
+        claims = {
+            "sub": "google-audience-test-001",
+            "email": "audience.customer@example.com",
+            "email_verified": True,
+            "name": "Audience Customer",
+        }
+        with patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "expected-web-client.apps.googleusercontent.com"}), patch.object(
+            auth.google_id_token, "verify_oauth2_token", return_value=claims
+        ) as verify_token:
+            response = self.client.post(
+                "/auth/google",
+                json={"id_token": "mocked-google-id-token-audience"},
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        verify_token.assert_called_once()
+        self.assertEqual(
+            verify_token.call_args.kwargs.get("audience"),
+            "expected-web-client.apps.googleusercontent.com",
+        )
+
+    def test_google_login_creates_and_reuses_verified_subject(self):
+        claims = {
+            "sub": "google-subject-test-001",
+            "email": "verified.customer@example.com",
+            "email_verified": True,
+            "name": "Google Customer",
+        }
+        with patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "test-web-client-id"}), patch.object(
+            auth.google_id_token, "verify_oauth2_token", return_value=claims
+        ):
+            first = self.client.post("/auth/google", json={"id_token": "mocked-google-id-token-123"})
+            self.assertEqual(first.status_code, 200, first.text)
+            second = self.client.post("/auth/google", json={"id_token": "mocked-google-id-token-123"})
+            self.assertEqual(second.status_code, 200, second.text)
+
+        self.assertEqual(first.json()["user"]["id"], second.json()["user"]["id"])
+        self.assertEqual(first.json()["user"]["role"], "customer")
+        with self.TestSession() as db:
+            users = db.query(models.DBUser).filter_by(email="verified.customer@example.com").all()
+            self.assertEqual(len(users), 1)
+            self.assertEqual(users[0].google_subject, "google-subject-test-001")
+
+    def test_google_login_requires_explicit_link_for_existing_password_account(self):
+        registered = self.client.post("/auth/register", json={
+            "full_name": "عميل موجود",
+            "phone": "777123488",
+            "email": "linked.customer@example.com",
+            "password": "SecurePass123",
+        })
+        self.assertEqual(registered.status_code, 201, registered.text)
+        original_id = registered.json()["user"]["id"]
+        user_token = registered.json()["access_token"]
+        claims = {
+            "sub": "google-subject-link-002",
+            "email": "linked.customer@example.com",
+            "email_verified": True,
+            "name": "Google Linked Customer",
+        }
+        with patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "test-web-client-id"}), patch.object(
+            auth.google_id_token, "verify_oauth2_token", return_value=claims
+        ):
+            auto_link = self.client.post(
+                "/auth/google",
+                json={"id_token": "mocked-google-id-token-456"},
+            )
+            self.assertEqual(auto_link.status_code, 409, auto_link.text)
+
+            with self.TestSession() as db:
+                account = db.query(models.DBUser).filter_by(id=original_id).first()
+                self.assertIsNone(account.google_subject)
+
+            linked = self.client.post(
+                "/auth/google/link",
+                headers={"Authorization": f"Bearer {user_token}"},
+                json={"id_token": "mocked-google-id-token-456"},
+            )
+            self.assertEqual(linked.status_code, 200, linked.text)
+            self.assertEqual(linked.json()["user"]["id"], original_id)
+            self.assertTrue(linked.json()["google_linked"])
+
+            conflict_claims = {**claims, "sub": "different-google-subject"}
+            with patch.object(auth.google_id_token, "verify_oauth2_token", return_value=conflict_claims):
+                conflict = self.client.post(
+                    "/auth/google/link",
+                    headers={"Authorization": f"Bearer {user_token}"},
+                    json={"id_token": "mocked-google-id-token-789"},
+                )
+                self.assertEqual(conflict.status_code, 409, conflict.text)
+
+        with self.TestSession() as db:
+            account = db.query(models.DBUser).filter_by(id=original_id).first()
+            self.assertEqual(account.google_subject, "google-subject-link-002")
+
+    def test_google_link_requires_authenticated_customer_and_matching_email(self):
+        registered = self.client.post("/auth/register", json={
+            "full_name": "عميل بدون بريد",
+            "phone": "777123485",
+            "password": "SecurePass123",
+        })
+        self.assertEqual(registered.status_code, 201, registered.text)
+        token = registered.json()["access_token"]
+
+        claims = {
+            "sub": "google-subject-no-email-003",
+            "email": "verified.new@example.com",
+            "email_verified": True,
+            "name": "Google Customer",
+        }
+        with patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "test-web-client-id"}), patch.object(
+            auth.google_id_token, "verify_oauth2_token", return_value=claims
+        ):
+            unauthorized = self.client.post(
+                "/auth/google/link",
+                json={"id_token": "mocked-google-id-token-003"},
+            )
+            self.assertEqual(unauthorized.status_code, 401)
+
+            linked = self.client.post(
+                "/auth/google/link",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"id_token": "mocked-google-id-token-003"},
+            )
+            self.assertEqual(linked.status_code, 200, linked.text)
+            self.assertEqual(linked.json()["user"]["email"], "verified.new@example.com")
+
+    def test_seller_can_explicitly_link_google_then_sign_in_with_google(self):
+        seller_token, _admin, store, _product_id = self._approved_store_and_product("777123484")
+        google_subject = "seller-google-subject-484"
+        claims = (google_subject, "seller484@example.com", "Seller Account")
+        with patch.object(auth, "_verified_google_identity", return_value=claims):
+            linked = self.client.post(
+                "/auth/google/link",
+                headers={"Authorization": f"Bearer {seller_token}"},
+                json={"id_token": "mocked-google-id-token"},
+            )
+            self.assertEqual(linked.status_code, 200, linked.text)
+            self.assertTrue(linked.json()["google_linked"])
+
+            session = self.client.post(
+                "/auth/google/seller",
+                json={"id_token": "mocked-google-id-token"},
+            )
+            self.assertEqual(session.status_code, 200, session.text)
+            self.assertEqual(session.json()["user"]["role"], "seller")
+            self.assertEqual(session.json()["user"]["store_id"], store["id"])
+
+        with self.TestSession() as db:
+            saved = db.query(models.DBUser).filter_by(id=session.json()["user"]["id"]).first()
+            self.assertEqual(saved.google_subject, google_subject)
+            self.assertEqual(saved.store_id, store["id"])
+
+    def test_google_login_rejects_unverified_email_and_invalid_token(self):
+        unverified = {
+            "sub": "google-unverified-subject",
+            "email": "unverified@example.com",
+            "email_verified": False,
+            "name": "Unverified",
+        }
+        with patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "test-web-client-id"}):
+            with patch.object(auth.google_id_token, "verify_oauth2_token", return_value=unverified):
+                response = self.client.post("/auth/google", json={"id_token": "mocked-unverified-token"})
+                self.assertEqual(response.status_code, 401, response.text)
+            with patch.object(auth.google_id_token, "verify_oauth2_token", side_effect=ValueError("bad signature")):
+                response = self.client.post("/auth/google", json={"id_token": "mocked-invalid-signature-token-123"})
+                self.assertEqual(response.status_code, 401, response.text)
+
+    def test_google_login_cannot_turn_admin_email_into_customer_session(self):
+        with self.TestSession() as db:
+            db.add(models.DBUser(
+                id="google_test_admin", name="مدير", email="admin.google@example.com",
+                role="ADMIN", phone="700000001", address="", password_hash=None,
+                status="active", google_subject=None,
+            ))
+            db.commit()
+        claims = {
+            "sub": "admin-google-subject",
+            "email": "admin.google@example.com",
+            "email_verified": True,
+            "name": "Admin",
+        }
+        with patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "test-web-client-id"}), patch.object(
+            auth.google_id_token, "verify_oauth2_token", return_value=claims
+        ):
+            response = self.client.post("/auth/google", json={"id_token": "mocked-admin-google-token-123"})
+        self.assertEqual(response.status_code, 403, response.text)
+
+    def test_google_login_fails_closed_when_not_configured(self):
+        import os
+        previous = os.environ.pop("GOOGLE_CLIENT_ID", None)
+        try:
+            response = self.client.post(
+                "/auth/google",
+                json={"id_token": "not-a-real-google-token-long-enough"},
+            )
+            self.assertEqual(response.status_code, 503)
+        finally:
+            if previous is not None:
+                os.environ["GOOGLE_CLIENT_ID"] = previous
+
+    def test_customer_can_update_profile_and_phone_without_changing_identity(self):
+        token, user_id = self._register("777123503")
+        response = self.client.put(
+            "/auth/me/profile",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"full_name": "اسم معدل", "phone": "+967777000111"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["id"], user_id)
+        self.assertEqual(response.json()["full_name"], "اسم معدل")
+        self.assertEqual(response.json()["phone"], "+967777000111")
+        me = self.client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(me.status_code, 200, me.text)
+        self.assertEqual(me.json()["id"], user_id)
+        self.assertEqual(me.json()["phone"], "+967777000111")
+
+    def test_profile_update_rejects_duplicate_phone_without_partial_change(self):
+        token, user_id = self._register("777123504")
+        self._register("777123505")
+        response = self.client.put(
+            "/auth/me/profile",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"full_name": "يجب ألا يتغير", "phone": "777123505"},
+        )
+        self.assertEqual(response.status_code, 409, response.text)
+        with self.TestSession() as db:
+            account = db.query(models.DBUser).filter_by(id=user_id).first()
+            self.assertEqual(account.name, "مستخدم تجريبي")
+            self.assertEqual(account.phone, "777123504")
+
+    def test_profile_update_rejects_malformed_phone(self):
+        token, _user_id = self._register("777123506")
+        response = self.client.put(
+            "/auth/me/profile",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"full_name": "اسم معدل", "phone": "++--"},
+        )
+        self.assertEqual(response.status_code, 422, response.text)
+
+    def test_wrong_password_is_rejected(self):
+        self.client.post("/auth/register", json={
+            "full_name": "عميل تجريبي",
+            "phone": "777123457",
+            "password": "SecurePass123",
+        })
+        response = self.client.post("/auth/login", json={
+            "phone": "777123457",
+            "password": "WrongPass123",
+        })
+        self.assertEqual(response.status_code, 401)
+
+    def test_duplicate_phone_is_rejected(self):
+        payload = {"full_name": "عميل تجريبي", "phone": "777123458", "password": "SecurePass123"}
+        self.assertEqual(self.client.post("/auth/register", json=payload).status_code, 201)
+        response = self.client.post("/auth/register", json=payload)
+        self.assertEqual(response.status_code, 409)
+
+    def test_invalid_or_missing_token_is_rejected(self):
+        self.assertEqual(self.client.get("/auth/me").status_code, 401)
+        invalid = self.client.get("/auth/me", headers={"Authorization": "Bearer invalid.token.value"})
+        self.assertEqual(invalid.status_code, 401)
+
+    def test_inactive_account_cannot_login_or_use_existing_token(self):
+        response = self.client.post("/auth/register", json={
+            "full_name": "عميل تجريبي",
+            "phone": "777123459",
+            "password": "SecurePass123",
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        token = response.json()["access_token"]
+        user_id = response.json()["user"]["id"]
+        with self.TestSession() as db:
+            user = db.query(models.DBUser).filter(models.DBUser.id == user_id).first()
+            user.status = "suspended"
+            db.commit()
+
+        login = self.client.post("/auth/login", json={
+            "phone": "777123459",
+            "password": "SecurePass123",
+        })
+        self.assertEqual(login.status_code, 403)
+        me = self.client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(me.status_code, 403)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,102 @@
+# Al Qulaisi production Nginx reverse-proxy template.
+# Replace api.example.com and certificate paths before enabling this file.
+# Keep the application container private: publish it on host 127.0.0.1 only.
+
+limit_req_zone $binary_remote_addr zone=alq_auth_limit:10m rate=5r/m;
+limit_req_zone $binary_remote_addr zone=alq_checkout_limit:10m rate=10r/m;
+limit_conn_zone $binary_remote_addr zone=alq_conn_limit:10m;
+
+upstream alqlaisi_api {
+    server 127.0.0.1:8000;
+    keepalive 32;
+}
+
+# Reject unexpected Host headers and do not redirect attacker-controlled hosts.
+server {
+    listen 80 default_server;
+    server_name _;
+    return 444;
+}
+server {
+    listen 80;
+    server_name api.example.com;
+    return 301 https://api.example.com$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name api.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/api.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_tickets off;
+    ssl_session_cache shared:ALQ_TLS:10m;
+    ssl_session_timeout 1d;
+
+    client_max_body_size 10m;
+    client_body_timeout 15s;
+    client_header_timeout 15s;
+    keepalive_timeout 30s;
+    send_timeout 30s;
+
+    limit_req_status 429;
+    limit_conn_status 429;
+    limit_conn alq_conn_limit 20;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+
+    # Authentication and account creation: low per-IP burst to slow brute-force abuse.
+    location ~ ^/(api/)?auth/(login|register|google|google/link)$ {
+        limit_req zone=alq_auth_limit burst=10 nodelay;
+        proxy_pass http://alqlaisi_api;
+        include /etc/nginx/proxy_params;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+    }
+
+    # Both supported checkout paths share a stricter order-creation limit.
+    location = /api/checkout {
+        limit_req zone=alq_checkout_limit burst=5 nodelay;
+        proxy_pass http://alqlaisi_api;
+        include /etc/nginx/proxy_params;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+    }
+    location = /api/orders/checkout {
+        limit_req zone=alq_checkout_limit burst=5 nodelay;
+        proxy_pass http://alqlaisi_api;
+        include /etc/nginx/proxy_params;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+    }
+
+    # Other API routes still inherit size limits, timeout limits, connection limits
+    # and security headers. Do not publish the application port outside this proxy.
+    location / {
+        proxy_pass http://alqlaisi_api;
+        include /etc/nginx/proxy_params;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+    }
+}

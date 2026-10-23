@@ -152,14 +152,26 @@ class AccessControlMiddleware(BaseHTTPMiddleware):
         user_status = payload.get("status")
         user_id = payload.get("sub")
 
-        # 3. Check Account Status (Suspend/Deactivate)
-        if user_status == UserStatus.SUSPENDED:
-            logger.warning(f"[Security Audit] Suspended user {user_id} attempted access to {path}")
+        # 3. Only active accounts may access protected endpoints.
+        if user_status != UserStatus.ACTIVE.value:
+            is_suspended = user_status == UserStatus.SUSPENDED.value
+            logger.warning(
+                f"[Security Audit] Non-active user {user_id} with status "
+                f"{user_status!r} attempted access to {path}"
+            )
             return create_security_error(
                 status_code=403,
-                error_code="ACCOUNT_SUSPENDED",
-                message_ar="هذا الحساب موقوف حالياً من قبل الإدارة. يرجى مراجعة الدعم.",
-                message_en="Your account has been suspended by administration.",
+                error_code="ACCOUNT_SUSPENDED" if is_suspended else "ACCOUNT_NOT_ACTIVE",
+                message_ar=(
+                    "هذا الحساب موقوف حالياً من قبل الإدارة. يرجى مراجعة الدعم."
+                    if is_suspended
+                    else "الحساب غير مفعّل بعد. يرجى انتظار اعتماد الإدارة."
+                ),
+                message_en=(
+                    "Your account has been suspended by administration."
+                    if is_suspended
+                    else "Your account is not active yet. Please wait for approval."
+                ),
                 path=path
             )
 
@@ -167,7 +179,7 @@ class AccessControlMiddleware(BaseHTTPMiddleware):
 
         # Rule A: Admin Area Protection
         if any(path.startswith(prefix) for prefix in self.ADMIN_PATH_PREFIXES):
-            if user_role != UserRole.ADMIN:
+            if user_role != UserRole.ADMIN.value:
                 logger.warning(
                     f"[Security Violation] Unauthorized access attempt to ADMIN route {path} "
                     f"by User {user_id} with role '{user_role}' from IP {client_ip}"
@@ -182,7 +194,7 @@ class AccessControlMiddleware(BaseHTTPMiddleware):
 
         # Rule B: Seller Area Protection
         if any(path.startswith(prefix) for prefix in self.SELLER_PATH_PREFIXES):
-            if user_role not in [UserRole.SELLER, UserRole.ADMIN]:
+            if user_role not in [UserRole.SELLER.value, UserRole.ADMIN.value]:
                 logger.warning(
                     f"[Security Violation] Customer {user_id} attempted to access SELLER route {path}"
                 )
@@ -194,7 +206,22 @@ class AccessControlMiddleware(BaseHTTPMiddleware):
                     path=path
                 )
 
-        # Rule C: Attach User Context to Request State for Downstream Handlers
+        # Rule C: Customer Area Protection
+        if any(path.startswith(prefix) for prefix in self.CUSTOMER_PATH_PREFIXES):
+            if user_role not in [UserRole.CUSTOMER.value, UserRole.ADMIN.value]:
+                logger.warning(
+                    f"[Security Violation] Non-customer {user_id} attempted to access "
+                    f"CUSTOMER route {path}"
+                )
+                return create_security_error(
+                    status_code=403,
+                    error_code="CUSTOMER_PRIVILEGE_REQUIRED",
+                    message_ar="غير مصرح: هذا القسم مخصص للعملاء.",
+                    message_en="Forbidden: Customer privileges are required.",
+                    path=path
+                )
+
+        # Rule D: Attach User Context to Request State for Downstream Handlers
         request.state.current_user_id = user_id
         request.state.current_user_role = user_role
         request.state.current_user_store_id = payload.get("store_id")
@@ -261,10 +288,10 @@ def verify_seller_store_ownership(store_id: int, current_user: dict):
     role = current_user.get("role")
     user_store_id = current_user.get("store_id")
 
-    if role == UserRole.ADMIN:
+    if role == UserRole.ADMIN.value:
         return True
 
-    if role != UserRole.SELLER or user_store_id != store_id:
+    if role != UserRole.SELLER.value or user_store_id != store_id:
         logger.warning(
             f"[Tenant Violation] Seller User {current_user.get('sub')} attempted to manipulate Store {store_id}"
         )
@@ -286,13 +313,13 @@ def verify_order_access(order_customer_id: int, order_store_id: int, current_use
     user_id = int(current_user.get("sub", 0))
     user_store_id = current_user.get("store_id")
 
-    if role == UserRole.ADMIN:
+    if role == UserRole.ADMIN.value:
         return True
 
-    if role == UserRole.CUSTOMER and user_id == order_customer_id:
+    if role == UserRole.CUSTOMER.value and user_id == order_customer_id:
         return True
 
-    if role == UserRole.SELLER and user_store_id == order_store_id:
+    if role == UserRole.SELLER.value and user_store_id == order_store_id:
         return True
 
     raise HTTPException(

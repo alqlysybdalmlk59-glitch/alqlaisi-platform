@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../core/network/api_client.dart';
+import '../../core/network/api_endpoints.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/theme/app_theme.dart';
 import 'models/auth_user.dart';
 import 'services/auth_service.dart';
 import 'validators/auth_validators.dart';
+
+const String _googleServerClientId = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
 
 class LoginPage extends StatefulWidget {
   const LoginPage({
@@ -73,6 +77,46 @@ class _LoginPageState extends State<LoginPage> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _error = 'تعذر تسجيل الدخول.');
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _loginWithGoogle() async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      if (!ApiEndpoints.googleServerClientIdConfigured) {
+        throw const ApiException(message: 'تسجيل Google غير مهيأ. استخدم معرّف Web OAuth الحقيقي من Google Cloud في GOOGLE_SERVER_CLIENT_ID.');
+      }
+      final googleUser = await GoogleSignIn(serverClientId: _googleServerClientId).signIn();
+      if (googleUser == null) {
+        return; // The user cancelled the Google account picker.
+      }
+
+      final googleAuth = await googleUser.authentication;
+      final idToken = googleAuth.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        throw const ApiException(
+          message: 'لم يصل رمز التحقق من Google. تحقق من إعداد OAuth.',
+        );
+      }
+
+      final session = await _authService.signInWithGoogle(idToken: idToken);
+      if (!mounted) return;
+      widget.onAuthenticated(session);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = 'تعذر تسجيل الدخول بواسطة Google. تحقق من الإعدادات والاتصال.');
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -163,6 +207,15 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           )
                         : const Text('تسجيل الدخول'),
+                  ),
+                  const SizedBox(height: 12),
+                  // Keep the Google action visible in every build. When OAuth
+                  // is not configured, tapping it shows the exact setup error
+                  // instead of making a real feature look like a missing button.
+                  OutlinedButton.icon(
+                    onPressed: _loading ? null : _loginWithGoogle,
+                    icon: const Icon(Icons.g_mobiledata, size: 30),
+                    label: const Text('متابعة باستخدام Google'),
                   ),
                   const SizedBox(height: 12),
                   TextButton(

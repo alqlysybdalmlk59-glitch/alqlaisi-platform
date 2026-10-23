@@ -10,6 +10,9 @@ import os
 # Add parent directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+# A deterministic, test-only secret; production secrets belong in the local .env.
+os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-not-for-production-0123456789")
+
 from backend.app.models.user import UserRole, UserStatus, UserDomain
 from backend.app.core.security import (
     hash_password,
@@ -72,7 +75,7 @@ class TestAlQulaisiSecurityRules(unittest.TestCase):
         )
 
     def test_password_hashing_and_verification(self):
-        """Test PBKDF2 hashing security and rejection of wrong passwords."""
+        """Test Argon2 password hashing and rejection of wrong passwords."""
         plain = "SuperSecret123!"
         hashed = hash_password(plain)
         self.assertTrue(verify_password(plain, hashed))

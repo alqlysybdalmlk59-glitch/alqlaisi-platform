@@ -22,7 +22,7 @@ class AuthValidators {
       return 'أدخل رقم الهاتف.';
     }
 
-    final normalized = phone.replaceAll(RegExp(r'[\s-]'), '');
+    final normalized = phone.replaceAll(RegExp(r'[\s()-]'), '');
 
     if (!RegExp(r'^\+?[0-9]{9,15}$').hasMatch(normalized)) {
       return 'أدخل رقم هاتف صحيحًا.';

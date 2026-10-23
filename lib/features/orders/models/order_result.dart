@@ -12,7 +12,7 @@ class OrderResult {
   final String paymentMethod;
 
   factory OrderResult.fromJson(Map<String, dynamic> json) {
-    final rawTotal = json['total'] ?? json['total_amount'] ?? 0;
+    final rawTotal = json['total_price'] ?? json['total'] ?? json['total_amount'] ?? 0;
 
     return OrderResult(
       id: (json['id'] ?? json['order_id'] ?? '').toString(),
@@ -20,7 +20,7 @@ class OrderResult {
       total: rawTotal is num
           ? rawTotal.toInt()
           : int.tryParse(rawTotal.toString()) ?? 0,
-      paymentMethod: (json['payment_method'] ?? 'cash_on_delivery').toString(),
+      paymentMethod: (json['payment_method'] ?? 'الدفع عند الاستلام').toString(),
     );
   }
 }

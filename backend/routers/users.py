@@ -1,84 +1,84 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+"""Deprecated authentication aliases and secure user administration."""
 from typing import List
-import database
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
 import models
-from schemas import UserSchema, BaseModel
-from pydantic import BaseModel as PydanticBase
+from routers.dependencies import get_db, require_admin
+from schemas import UserStatusRequest
 
-router = APIRouter(prefix="/api/users", tags=["Users & Authentication"])
+router = APIRouter(prefix="/api/users", tags=["Users"])
 
-def get_db():
-    db = database.SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
-class LoginRequest(PydanticBase):
-    email: str
-    password: str = ""
-
-class GoogleLoginRequest(PydanticBase):
-    email: str
-    name: str
-    photo_url: str = ""
-
-@post_route = router.post("/register", response_model=UserSchema)
-@router.post("/register", response_model=UserSchema)
-def register_user(user: UserSchema, db: Session = Depends(get_db)):
-    existing = db.query(models.DBUser).filter(models.DBUser.email == user.email).first()
-    if existing:
-        return existing
-    db_user = models.DBUser(
-        id=user.id or f"u_{user.email}",
-        name=user.name,
-        email=user.email,
-        role=user.role.upper(),
-        phone=user.phone,
-        address=user.address
+def _deprecated_auth_endpoint():
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="تم إيقاف المسار القديم لأسباب أمنية. استخدم /api/auth/register و/api/auth/login.",
     )
-    db.add(db_user)
+
+
+@router.post("/register")
+def register_user():
+    return _deprecated_auth_endpoint()
+
+
+@router.post("/login")
+def login_user():
+    return _deprecated_auth_endpoint()
+
+
+@router.post("/google-login")
+def google_login():
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="تسجيل الدخول بواسطة Google يتطلب التحقق من Google ID token على الخادم.",
+    )
+
+
+@router.get("/", response_model=List[dict])
+def get_users(
+    _principal: dict = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return [
+        {
+            "id": str(user.id),
+            "name": user.name,
+            "email": user.email if not user.email.endswith("@accounts.alqulaisi.invalid") else None,
+            "role": user.role,
+            "phone": user.phone,
+            "address": user.address,
+            "status": getattr(user, "status", "active"),
+            "store_id": getattr(user, "store_id", None),
+        }
+        for user in db.query(models.DBUser).order_by(models.DBUser.name.asc()).all()
+    ]
+
+
+@router.put("/{user_id}/status")
+def update_user_status(
+    user_id: str,
+    payload: UserStatusRequest,
+    principal: dict = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    user = db.query(models.DBUser).filter(models.DBUser.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="حساب المستخدم غير موجود.")
+
+    next_status = payload.status
+    if (user.role or "").upper() == "ADMIN" and next_status == "suspended":
+        if str(user.id) == principal["id"]:
+            raise HTTPException(status_code=409, detail="لا يمكنك إيقاف حساب الإدارة الذي تستخدمه حالياً.")
+        active_admins = db.query(models.DBUser).filter(
+            func.upper(models.DBUser.role) == "ADMIN",
+            models.DBUser.status == "active",
+        ).count()
+        if active_admins <= 1:
+            raise HTTPException(status_code=409, detail="لا يمكن إيقاف آخر حساب إداري نشط.")
+
+    user.status = next_status
     db.commit()
-    db.refresh(db_user)
-    return db_user
-
-@router.post("/login", response_model=UserSchema)
-def login_user(req: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(models.DBUser).filter(models.DBUser.email == req.email).first()
-    if not user:
-        # إنشاء مستخدم افتراضي تلقائياً إن لمש يكن موجوداً لتسهيل التجربة
-        role = "ADMIN" if "admin" in req.email.lower() else ("VENDOR" if "vendor" in req.email.lower() else "CLIENT")
-        user = models.DBUser(
-            id=f"u_{req.email}",
-            name=req.email.split('@')[0],
-            email=req.email,
-            role=role,
-            phone="0771234567",
-            address="صنعاء - اليمن"
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    return user
-
-@router.post("/google-login", response_model=UserSchema)
-def google_login(req: GoogleLoginRequest, db: Session = Depends(get_db)):
-    user = db.query(models.DBUser).filter(models.DBUser.email == req.email).first()
-    if not user:
-        user = models.DBUser(
-            id=f"g_{req.email}",
-            name=req.name,
-            email=req.email,
-            role="CLIENT",
-            phone="0770000000",
-            address="صنعاء - اليمن"
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    return user
-
-@router.get("/", response_model=List[UserSchema])
-def get_users(db: Session = Depends(get_db)):
-    return db.query(models.DBUser).all()
+    return {"status": "updated", "user_id": str(user.id), "account_status": user.status}

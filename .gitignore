@@ -25,6 +25,12 @@ build/
 .gradle/
 local.properties
 
+# Android signing secrets - never commit these
+*.jks
+*.keystore
+key.properties
+**/key.properties
+
 # IDE
 .idea/
 .vscode/
