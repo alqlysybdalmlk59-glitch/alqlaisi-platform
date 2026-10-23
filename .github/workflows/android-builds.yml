@@ -1,0 +1,120 @@
+name: Android builds
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "android/**"
+      - "app/**"
+      - "lib/**"
+      - "test/**"
+      - "seller_app/**"
+      - "pubspec.yaml"
+      - "pubspec.lock"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle/**"
+      - "gradle.properties"
+      - ".github/workflows/android-builds.yml"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  customer-flutter:
+    name: Customer Flutter Android build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.44.4"
+          cache: true
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Analyze customer app
+        run: flutter analyze
+      - name: Run customer tests
+        run: flutter test
+      - name: Build Android debug APK
+        run: flutter build apk --debug --dart-define=API_BASE_URL=http://10.0.2.2:8000/api
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: alqlaisi-customer-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  seller-flutter:
+    name: Seller Flutter Android build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: seller_app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.44.4"
+          cache: true
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Analyze seller app
+        run: flutter analyze
+      - name: Build Android debug APK
+        run: flutter build apk --debug --dart-define=API_BASE_URL=http://10.0.2.2:8000/api
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: alqlaisi-seller-debug-apk
+          path: seller_app/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  native-android:
+    name: Native Android Studio app build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install Android 34 SDK packages
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+      - name: Build native Android app
+        run: ./gradlew --no-daemon --stacktrace :app:assembleDebug
+      - name: Upload native APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: alqlaisi-native-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
