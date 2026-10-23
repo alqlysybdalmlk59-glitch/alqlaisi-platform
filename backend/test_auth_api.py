@@ -167,7 +167,7 @@ class TestAuthAPI(unittest.TestCase):
         self.assertEqual(me.json()["store_id"], store["id"])
 
     def test_checkout_uses_server_prices_and_fee_not_client_values(self):
-        seller_token, _admin, store, product_id = self._approved_store_and_product()
+        seller_token, admin_token, store, product_id = self._approved_store_and_product()
         buyer_token, buyer_id = self._register("777123471")
         response = self.client.post("/api/checkout",
             headers={"Authorization": f"Bearer {buyer_token}"},
@@ -227,9 +227,20 @@ class TestAuthAPI(unittest.TestCase):
         )
         self.assertEqual(before_delivery.status_code, 409, before_delivery.text)
 
+        ready = self.client.put(
+            f"/api/orders/{order['id']}/status?status=جاهز للتوصيل",
+            headers={"Authorization": f"Bearer {seller_token}"},
+        )
+        self.assertEqual(ready.status_code, 200, ready.text)
+        dispatched = self.client.put(
+            f"/api/orders/{order['id']}/dispatch",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"delivery_agent_name": "موظف الاختبار", "delivery_agent_phone": "777123470", "delivery_notes": ""},
+        )
+        self.assertEqual(dispatched.status_code, 200, dispatched.text)
         delivered = self.client.put(
             f"/api/orders/{order['id']}/status?status=تم التسليم",
-            headers={"Authorization": f"Bearer {_admin}"},
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
         self.assertEqual(delivered.status_code, 200, delivered.text)
 
@@ -290,6 +301,22 @@ class TestAuthAPI(unittest.TestCase):
         )
         self.assertEqual(checkout.status_code, 201, checkout.text)
         order_id = checkout.json()[0]["id"]
+        preparing = self.client.put(
+            f"/api/orders/{order_id}/status?status=قيد التجهيز",
+            headers={"Authorization": f"Bearer {seller_token}"},
+        )
+        self.assertEqual(preparing.status_code, 200, preparing.text)
+        ready = self.client.put(
+            f"/api/orders/{order_id}/status?status=جاهز للتوصيل",
+            headers={"Authorization": f"Bearer {seller_token}"},
+        )
+        self.assertEqual(ready.status_code, 200, ready.text)
+        dispatched = self.client.put(
+            f"/api/orders/{order_id}/dispatch",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"delivery_agent_name": "موظف التقرير", "delivery_agent_phone": "777123497", "delivery_notes": ""},
+        )
+        self.assertEqual(dispatched.status_code, 200, dispatched.text)
         delivered = self.client.put(
             f"/api/orders/{order_id}/status?status=تم التسليم",
             headers={"Authorization": f"Bearer {admin_token}"},
