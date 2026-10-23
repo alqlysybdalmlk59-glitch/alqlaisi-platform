@@ -63,6 +63,17 @@ class OrderSchema(ORMModel):
     address: str
     status: str
     date: str
+    delivery_agent_name: Optional[str] = None
+    delivery_agent_phone: Optional[str] = None
+    delivery_notes: Optional[str] = None
+    delivery_assigned_at: Optional[str] = None
+    delivery_delivered_at: Optional[str] = None
+
+class DeliveryAssignmentRequest(BaseModel):
+    """Admin-only assignment to the platform's manually managed delivery team."""
+    delivery_agent_name: str = Field(min_length=2, max_length=120)
+    delivery_agent_phone: str = Field(min_length=7, max_length=20, pattern=r"^\\+?[0-9][0-9 ()-]{5,18}[0-9]$")
+    delivery_notes: str = Field(default="", max_length=1000)
 
 class CheckoutItem(BaseModel):
     product_id: str = Field(min_length=1, max_length=100)

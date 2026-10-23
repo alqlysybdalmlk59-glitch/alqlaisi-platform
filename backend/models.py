@@ -57,6 +57,12 @@ class DBOrder(Base):
     address = Column(String, nullable=False)
     status = Column(String, default="بانتظار القبول")
     date = Column(String, nullable=False)
+    # Internal delivery assignment; populated only by an authenticated admin dispatch action.
+    delivery_agent_name = Column(String, nullable=True)
+    delivery_agent_phone = Column(String, nullable=True)
+    delivery_notes = Column(Text, nullable=True)
+    delivery_assigned_at = Column(String, nullable=True)
+    delivery_delivered_at = Column(String, nullable=True)
 
 class DBSupportTicket(Base):
     __tablename__ = "support_tickets"
