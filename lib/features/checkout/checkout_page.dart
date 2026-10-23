@@ -262,7 +262,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                         const DropdownMenuItem<String>(value: '', child: Text('إدخال عنوان جديد')),
                         ..._savedAddresses.map((address) => DropdownMenuItem<String>(
                           value: (address['id'] ?? '').toString(),
-                          child: Text((address['label'] ?? 'عنوان').toString() + ' — ' + (address['address'] ?? '').toString(), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          child: Text('${(address['label'] ?? 'عنوان').toString()} — ${(address['address'] ?? '').toString()}', maxLines: 1, overflow: TextOverflow.ellipsis),
                         )),
                       ],
                       onChanged: _submitting ? null : _selectAddress,
