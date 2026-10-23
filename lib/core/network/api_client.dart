@@ -68,6 +68,17 @@ class ApiClient {
     }
   }
 
+  Future<dynamic> delete(String endpoint, {String? token}) async {
+    try {
+      final url = Uri.parse('$baseUrl$endpoint');
+      final response = await _client.delete(url, headers: _headers(token));
+      return _processResponse(response);
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      throw ApiException(message: 'فشل الاتصال بالخادم: $e');
+    }
+  }
+
   dynamic _processResponse(http.Response response) {
     dynamic decoded;
     try {

@@ -101,7 +101,7 @@ class OrderStatusHistorySchema(ORMModel):
 class CustomerAddressRequest(BaseModel):
     label: str = Field(default="المنزل", min_length=1, max_length=80)
     recipient_name: str = Field(min_length=2, max_length=120)
-    phone: str = Field(min_length=7, max_length=20, pattern=r"^\\+?[0-9][0-9 ()-]{5,18}[0-9]$")
+    phone: str = Field(min_length=7, max_length=20, pattern=r"^\+?[0-9][0-9 ()-]{5,18}[0-9]$")
     address: str = Field(min_length=5, max_length=1000)
     notes: str = Field(default="", max_length=1000)
     is_default: bool = False

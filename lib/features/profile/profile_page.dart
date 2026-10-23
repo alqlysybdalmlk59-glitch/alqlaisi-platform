@@ -6,6 +6,7 @@ import '../../core/network/api_endpoints.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/theme/app_theme.dart';
 import '../support/support_page.dart';
+import 'customer_addresses_page.dart';
 import '../auth/validators/auth_validators.dart';
 
 const String _googleServerClientId =
@@ -424,6 +425,19 @@ class _ProfilePageState extends State<ProfilePage> {
                               )
                             : const Icon(Icons.chevron_left),
                     onTap: googleLinked || _linkingGoogle ? null : _linkGoogle,
+                  ),
+                ),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.location_on_outlined, color: AppTheme.primary),
+                    title: const Text('دفتر عناوين التوصيل'),
+                    subtitle: const Text('إضافة العناوين وتعديلها وحفظ العنوان الافتراضي'),
+                    trailing: const Icon(Icons.chevron_left),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => CustomerAddressesPage(token: widget.token),
+                      ),
+                    ),
                   ),
                 ),
                 Card(
