@@ -36,7 +36,7 @@ jobs:
       - name: Smoke-test unified FastAPI entry point
         env:
           JWT_SECRET_KEY: test-only-secret-not-for-production-0123456789
-        run: python -c "from backend.app.main import app as central; from backend.main import app as compatibility; assert central is compatibility, 'Legacy entry point must import the canonical secured app'; paths = central.openapi()['paths']; print('OpenAPI paths:', sorted(paths)); assert '/auth/login' in paths, 'Missing auth login route'; assert '/auth/google' in paths, 'Missing Google login route'; assert '/api/v1/health' in paths, 'Missing versioned health route'; assert '/api/orders/{order_id}/history' in paths, 'Missing order-history audit route'; print('Canonical and compatibility entry points loaded')"
+        run: python -c "from backend.app.main import app as central; from backend.main import app as compatibility; assert central is compatibility, 'Legacy entry point must import the canonical secured app'; paths = central.openapi()['paths']; print('OpenAPI paths:', sorted(paths)); assert '/auth/login' in paths, 'Missing auth login route'; assert '/auth/google' in paths, 'Missing Google login route'; assert '/api/v1/health' in paths, 'Missing versioned health route'; assert '/api/orders/{order_id}/history' in paths, 'Missing order-history audit route'; assert '/api/orders/{order_id}/dispatch' in paths, 'Missing internal courier dispatch route'; print('Canonical and compatibility entry points loaded')"
       - name: Run security unit tests
         env:
           JWT_SECRET_KEY: test-only-secret-not-for-production-0123456789
