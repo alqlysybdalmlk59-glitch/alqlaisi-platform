@@ -47,6 +47,7 @@ class TestAuthAPI(unittest.TestCase):
     def setUp(self):
         with self.TestSession() as db:
             db.query(models.DBSupportTicket).delete()
+            db.query(models.DBCustomerAddress).delete()
             db.query(models.DBVendorOwnershipHistory).delete()
             db.query(models.DBProductReview).delete()
             db.query(models.DBOrderStatusHistory).delete()
@@ -167,7 +168,7 @@ class TestAuthAPI(unittest.TestCase):
         self.assertEqual(me.json()["store_id"], store["id"])
 
     def test_checkout_uses_server_prices_and_fee_not_client_values(self):
-        seller_token, _admin, store, product_id = self._approved_store_and_product()
+        seller_token, admin_token, store, product_id = self._approved_store_and_product()
         buyer_token, buyer_id = self._register("777123471")
         response = self.client.post("/api/checkout",
             headers={"Authorization": f"Bearer {buyer_token}"},
@@ -227,9 +228,20 @@ class TestAuthAPI(unittest.TestCase):
         )
         self.assertEqual(before_delivery.status_code, 409, before_delivery.text)
 
+        ready = self.client.put(
+            f"/api/orders/{order['id']}/status?status=جاهز للتوصيل",
+            headers={"Authorization": f"Bearer {seller_token}"},
+        )
+        self.assertEqual(ready.status_code, 200, ready.text)
+        dispatched = self.client.put(
+            f"/api/orders/{order['id']}/dispatch",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"delivery_agent_name": "موظف الاختبار", "delivery_agent_phone": "777123470", "delivery_notes": ""},
+        )
+        self.assertEqual(dispatched.status_code, 200, dispatched.text)
         delivered = self.client.put(
             f"/api/orders/{order['id']}/status?status=تم التسليم",
-            headers={"Authorization": f"Bearer {_admin}"},
+            headers={"Authorization": f"Bearer {admin_token}"},
         )
         self.assertEqual(delivered.status_code, 200, delivered.text)
 
@@ -290,6 +302,22 @@ class TestAuthAPI(unittest.TestCase):
         )
         self.assertEqual(checkout.status_code, 201, checkout.text)
         order_id = checkout.json()[0]["id"]
+        preparing = self.client.put(
+            f"/api/orders/{order_id}/status?status=قيد التجهيز",
+            headers={"Authorization": f"Bearer {seller_token}"},
+        )
+        self.assertEqual(preparing.status_code, 200, preparing.text)
+        ready = self.client.put(
+            f"/api/orders/{order_id}/status?status=جاهز للتوصيل",
+            headers={"Authorization": f"Bearer {seller_token}"},
+        )
+        self.assertEqual(ready.status_code, 200, ready.text)
+        dispatched = self.client.put(
+            f"/api/orders/{order_id}/dispatch",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"delivery_agent_name": "موظف التقرير", "delivery_agent_phone": "777123497", "delivery_notes": ""},
+        )
+        self.assertEqual(dispatched.status_code, 200, dispatched.text)
         delivered = self.client.put(
             f"/api/orders/{order_id}/status?status=تم التسليم",
             headers={"Authorization": f"Bearer {admin_token}"},
@@ -507,6 +535,154 @@ class TestAuthAPI(unittest.TestCase):
             saved = db.query(models.DBVendorStore).filter_by(id=store_id).first()
             self.assertEqual(saved.owner_user_id, user_id)
             self.assertEqual(saved.store_name, "متجر بعد التعديل")
+
+    def test_customer_address_book_is_account_scoped_and_keeps_one_default(self):
+        customer_token, _customer_id = self._register("777123510")
+        other_token, _other_id = self._register("777123511")
+        first = self.client.post("/api/customer/addresses",
+            headers={"Authorization": f"Bearer {customer_token}"},
+            json={"label": "المنزل", "recipient_name": "العميل الأول", "phone": "777123510",
+                "address": "صنعاء، حي الاختبار، شارع ألف", "notes": "بوابة البيت", "is_default": False})
+        self.assertEqual(first.status_code, 201, first.text)
+        self.assertTrue(first.json()["is_default"], "The first saved address must become the default.")
+        first_id = first.json()["id"]
+
+        second = self.client.post("/api/customer/addresses",
+            headers={"Authorization": f"Bearer {customer_token}"},
+            json={"label": "العمل", "recipient_name": "العميل الأول", "phone": "777123510",
+                "address": "صنعاء، شارع باء، مبنى العمل", "notes": "الدور الثاني", "is_default": True})
+        self.assertEqual(second.status_code, 201, second.text)
+        second_id = second.json()["id"]
+        self.assertTrue(second.json()["is_default"])
+
+        mine = self.client.get("/api/customer/addresses", headers={"Authorization": f"Bearer {customer_token}"})
+        self.assertEqual(mine.status_code, 200, mine.text)
+        self.assertEqual(len(mine.json()), 2)
+        self.assertEqual(sum(1 for address in mine.json() if address["is_default"]), 1)
+        self.assertEqual(mine.json()[0]["id"], second_id, "Default address should be listed first.")
+
+        other = self.client.get("/api/customer/addresses", headers={"Authorization": f"Bearer {other_token}"})
+        self.assertEqual(other.status_code, 200, other.text)
+        self.assertEqual(other.json(), [])
+        forbidden = self.client.delete(f"/api/customer/addresses/{second_id}",
+            headers={"Authorization": f"Bearer {other_token}"})
+        self.assertEqual(forbidden.status_code, 404, forbidden.text)
+
+        removed = self.client.delete(f"/api/customer/addresses/{second_id}",
+            headers={"Authorization": f"Bearer {customer_token}"})
+        self.assertEqual(removed.status_code, 200, removed.text)
+        after_delete = self.client.get("/api/customer/addresses", headers={"Authorization": f"Bearer {customer_token}"})
+        self.assertEqual(len(after_delete.json()), 1)
+        self.assertEqual(after_delete.json()[0]["id"], first_id)
+        self.assertTrue(after_delete.json()[0]["is_default"], "Deleting the default must promote the next saved address.")
+
+    def test_admin_sales_insights_are_database_backed_and_role_protected(self):
+        seller_token, admin_token, store, product_id = self._approved_store_and_product("777123501")
+        buyer_token, _buyer_id = self._register("777123502")
+        checkout = self.client.post("/api/checkout",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+            json={"recipient_name": "عميل التحليل", "phone": "777000501",
+                "delivery_address": "صنعاء، حي الاختبار، شارع الاختبار",
+                "items": [{"product_id": product_id, "quantity": 1}]})
+        self.assertEqual(checkout.status_code, 201, checkout.text)
+        order_id = checkout.json()[0]["id"]
+        for next_status in ("قيد التجهيز", "جاهز للتوصيل"):
+            changed = self.client.put(f"/api/orders/{order_id}/status?status={next_status}",
+                headers={"Authorization": f"Bearer {seller_token}"})
+            self.assertEqual(changed.status_code, 200, changed.text)
+        dispatched = self.client.put(f"/api/orders/{order_id}/dispatch",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"delivery_agent_name": "موظف تحليل", "delivery_agent_phone": "777123501", "delivery_notes": ""})
+        self.assertEqual(dispatched.status_code, 200, dispatched.text)
+        delivered = self.client.put(f"/api/orders/{order_id}/status?status=تم التسليم",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(delivered.status_code, 200, delivered.text)
+
+        report = self.client.post("/api/ai/sales-insights",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(report.status_code, 200, report.text)
+        body = report.json()
+        self.assertEqual(body["source"], "database_rule_based")
+        self.assertFalse(body["ai_model_connected"])
+        self.assertEqual(body["summary"]["total_orders"], 1)
+        self.assertEqual(body["summary"]["delivered_orders"], 1)
+        self.assertEqual(body["summary"]["product_sales_total"], 175)
+        self.assertEqual(body["summary"]["delivery_fee_total"], 15)
+        self.assertEqual(body["summary"]["collected_total"], 190)
+        self.assertEqual(body["top_products"][0]["title"], "دفتر اختبار")
+        self.assertEqual(body["top_products"][0]["quantity_sold"], 1)
+        forbidden = self.client.post("/api/ai/sales-insights",
+            headers={"Authorization": f"Bearer {buyer_token}"})
+        self.assertEqual(forbidden.status_code, 403, forbidden.text)
+
+    def test_admin_dispatch_assigns_internal_courier_and_audits_lifecycle(self):
+        seller_token, admin_token, store, product_id = self._approved_store_and_product("777123494")
+        buyer_token, _buyer_id = self._register("777123495")
+        checkout = self.client.post("/api/checkout",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+            json={"recipient_name": "عميل التوصيل", "phone": "777999495",
+                "delivery_address": "صنعاء، حي الاختبار، شارع الاختبار",
+                "items": [{"product_id": product_id, "quantity": 1}]})
+        self.assertEqual(checkout.status_code, 201, checkout.text)
+        order = checkout.json()[0]
+        order_id = order["id"]
+
+        for next_status in ("قيد التجهيز", "جاهز للتوصيل"):
+            changed = self.client.put(
+                f"/api/orders/{order_id}/status?status={next_status}",
+                headers={"Authorization": f"Bearer {seller_token}"})
+            self.assertEqual(changed.status_code, 200, changed.text)
+
+        direct_transit = self.client.put(
+            f"/api/orders/{order_id}/status?status=قيد التوصيل",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(direct_transit.status_code, 409, direct_transit.text)
+        premature_delivery = self.client.put(
+            f"/api/orders/{order_id}/status?status=تم التسليم",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(premature_delivery.status_code, 409, premature_delivery.text)
+
+        payload = {"delivery_agent_name": "موظف التوصيل الأول",
+            "delivery_agent_phone": "777123494", "delivery_notes": "اتصل عند الوصول"}
+        forbidden = self.client.put(f"/api/orders/{order_id}/dispatch",
+            headers={"Authorization": f"Bearer {buyer_token}"}, json=payload)
+        self.assertEqual(forbidden.status_code, 403, forbidden.text)
+
+        dispatched = self.client.put(f"/api/orders/{order_id}/dispatch",
+            headers={"Authorization": f"Bearer {admin_token}"}, json=payload)
+        self.assertEqual(dispatched.status_code, 200, dispatched.text)
+        assigned_order = dispatched.json()["order"]
+        self.assertEqual(assigned_order["status"], "قيد التوصيل")
+        self.assertEqual(assigned_order["delivery_agent_name"], "موظف التوصيل الأول")
+        self.assertEqual(assigned_order["delivery_agent_phone"], "777123494")
+        self.assertIsNotNone(assigned_order["delivery_assigned_at"])
+
+        reassigned = self.client.put(f"/api/orders/{order_id}/dispatch",
+            headers={"Authorization": f"Bearer {admin_token}"}, json={
+                "delivery_agent_name": "موظف التوصيل البديل",
+                "delivery_agent_phone": "777123496", "delivery_notes": "إعادة إسناد بسبب تغيير المناوبة"})
+        self.assertEqual(reassigned.status_code, 200, reassigned.text)
+        self.assertEqual(reassigned.json()["order"]["delivery_agent_name"], "موظف التوصيل البديل")
+
+        delivered = self.client.put(
+            f"/api/orders/{order_id}/status?status=تم التسليم",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(delivered.status_code, 200, delivered.text)
+        history = self.client.get(f"/api/orders/{order_id}/history",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(history.status_code, 200, history.text)
+        events = history.json()
+        self.assertEqual(events[-3]["old_status"], "جاهز للتوصيل")
+        self.assertEqual(events[-3]["new_status"], "قيد التوصيل")
+        self.assertIn("موظف التوصيل الأول", events[-3]["note"])
+        self.assertEqual(events[-2]["old_status"], "قيد التوصيل")
+        self.assertEqual(events[-2]["new_status"], "قيد التوصيل")
+        self.assertIn("موظف التوصيل البديل", events[-2]["note"])
+        self.assertEqual(events[-1]["new_status"], "تم التسليم")
+        with self.TestSession() as db:
+            saved = db.query(models.DBOrder).filter_by(id=order_id).first()
+            self.assertEqual(saved.delivery_agent_name, "موظف التوصيل البديل")
+            self.assertIsNotNone(saved.delivery_delivered_at)
 
     def test_google_login_uses_configured_web_client_id_as_token_audience(self):
         claims = {

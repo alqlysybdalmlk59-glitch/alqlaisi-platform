@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from models import DBOrder, DBOrderStatusHistory, DBProduct, DBProductReview, DBUser, DBVendorStore
-from schemas import CheckoutRequest, OrderSchema, OrderStatusHistorySchema, ProductReviewCreateRequest, ProductReviewSchema
+from schemas import CheckoutRequest, DeliveryAssignmentRequest, OrderSchema, OrderStatusHistorySchema, ProductReviewCreateRequest, ProductReviewSchema
 from routers.dependencies import get_db, get_current_principal, require_admin, require_customer, require_seller_or_admin
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
@@ -15,6 +15,16 @@ VALID_ORDER_STATUSES = {"بانتظار القبول", "قيد التجهيز", 
 SELLER_TRANSITIONS = {"بانتظار القبول": {"قيد التجهيز", CANCELLED},
     "قيد التجهيز": {"جاهز للتوصيل", CANCELLED}, "جاهز للتوصيل": set(),
     "قيد التوصيل": set(), DELIVERED: set(), CANCELLED: set()}
+# Admins manage the operational lifecycle too, but a ready order must pass through
+# the audited dispatch endpoint before it can enter transit.
+ADMIN_TRANSITIONS = {
+    "بانتظار القبول": {"قيد التجهيز", CANCELLED},
+    "قيد التجهيز": {"جاهز للتوصيل", CANCELLED},
+    "جاهز للتوصيل": {CANCELLED},
+    "قيد التوصيل": {DELIVERED},
+    DELIVERED: set(),
+    CANCELLED: set(),
+}
 
 def create_orders(payload: CheckoutRequest, principal: dict, db: Session) -> list[DBOrder]:
     if payload.payment_method not in {"cash_on_delivery", "الدفع عند الاستلام"}:
@@ -312,6 +322,58 @@ def get_order_status_history(
     ).order_by(DBOrderStatusHistory.created_at.asc(), DBOrderStatusHistory.id.asc()).all()
 
 
+@router.put("/{order_id}/dispatch")
+def dispatch_order(
+    order_id: str,
+    payload: DeliveryAssignmentRequest,
+    principal: dict = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Assign or reassign an internal delivery agent, recording the action in order history."""
+    order = db.query(DBOrder).filter(DBOrder.id == order_id).first()
+    if order is None:
+        raise HTTPException(status_code=404, detail="الطلب غير موجود")
+    if order.status not in {"جاهز للتوصيل", "قيد التوصيل"}:
+        raise HTTPException(status_code=409, detail="لا يمكن إسناد التوصيل إلا لطلب جاهز للتوصيل أو قيد التوصيل.")
+
+    agent_name = payload.delivery_agent_name.strip()
+    agent_phone = payload.delivery_agent_phone.strip()
+    if len(agent_name) < 2:
+        raise HTTPException(status_code=422, detail="أدخل اسم موظف التوصيل كاملاً.")
+    now = datetime.now(timezone.utc).isoformat()
+    previous_status = order.status
+    previous_agent = order.delivery_agent_name
+    is_reassignment = previous_status == "قيد التوصيل" and bool(previous_agent)
+    order.delivery_agent_name = agent_name
+    order.delivery_agent_phone = agent_phone
+    order.delivery_notes = payload.delivery_notes.strip()
+    order.delivery_assigned_at = now
+    if previous_status == "جاهز للتوصيل":
+        order.status = "قيد التوصيل"
+    note_prefix = "إعادة إسناد التوصيل" if is_reassignment else "إسناد التوصيل الداخلي"
+    note = f"{note_prefix} إلى {agent_name} ({agent_phone})."
+    if is_reassignment:
+        note = f"{note_prefix} من {previous_agent} إلى {agent_name} ({agent_phone})."
+    if order.delivery_notes:
+        note += f" ملاحظات: {order.delivery_notes}"
+    db.add(DBOrderStatusHistory(
+        id=f"order_history_{uuid.uuid4().hex}",
+        order_id=order.id,
+        old_status=previous_status,
+        new_status=order.status,
+        changed_by_user_id=principal["id"],
+        changed_by_role=principal["role"],
+        note=note,
+        created_at=now,
+    ))
+    db.commit()
+    db.refresh(order)
+    return {
+        "status": "dispatched",
+        "order": OrderSchema.model_validate(order).model_dump(),
+    }
+
+
 @router.put("/{order_id}/status")
 def update_order_status(order_id: str, status: str, principal: dict = Depends(require_seller_or_admin), db: Session = Depends(get_db)):
     order = db.query(DBOrder).filter(DBOrder.id == order_id).first()
@@ -321,10 +383,21 @@ def update_order_status(order_id: str, status: str, principal: dict = Depends(re
         raise HTTPException(status_code=403, detail="لا يمكنك تعديل طلب متجر آخر.")
     if status not in VALID_ORDER_STATUSES:
         raise HTTPException(status_code=422, detail="حالة الطلب غير معتمدة.")
+    if status == order.status:
+        return {"status": "unchanged", "new_status": status}
     if order.status in {DELIVERED, CANCELLED}:
         raise HTTPException(status_code=409, detail="الطلب منتهٍ ولا يمكن تغيير حالته.")
-    if principal["role"] != "ADMIN" and status not in SELLER_TRANSITIONS.get(order.status, set()):
-        raise HTTPException(status_code=409, detail="انتقال حالة الطلب غير مسموح للبائع.")
+    transitions = ADMIN_TRANSITIONS if principal["role"] == "ADMIN" else SELLER_TRANSITIONS
+    if status not in transitions.get(order.status, set()):
+        if status == "قيد التوصيل":
+            raise HTTPException(status_code=409, detail="يجب إسناد موظف التوصيل من لوحة الإدارة قبل بدء التوصيل.")
+        raise HTTPException(status_code=409, detail="انتقال حالة الطلب غير مسموح من الحالة الحالية.")
+    if status == DELIVERED:
+        if principal["role"] != "ADMIN":
+            raise HTTPException(status_code=403, detail="تأكيد التسليم النهائي من صلاحية الإدارة الداخلية فقط.")
+        if not order.delivery_agent_name or not order.delivery_agent_phone:
+            raise HTTPException(status_code=409, detail="لا يمكن تأكيد التسليم قبل إسناد موظف توصيل.")
+        order.delivery_delivered_at = datetime.now(timezone.utc).isoformat()
     previous_status = order.status
     order.status = status
     db.add(DBOrderStatusHistory(

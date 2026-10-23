@@ -34,6 +34,13 @@ def ensure_schema_compatibility() -> None:
             "owner_user_id": "VARCHAR",
             "delivery_fee": "FLOAT NOT NULL DEFAULT 15.0",
         },
+        "orders": {
+            "delivery_agent_name": "VARCHAR",
+            "delivery_agent_phone": "VARCHAR",
+            "delivery_notes": "TEXT",
+            "delivery_assigned_at": "VARCHAR",
+            "delivery_delivered_at": "VARCHAR",
+        },
     }
     statements = []
     for table, columns in additions.items():

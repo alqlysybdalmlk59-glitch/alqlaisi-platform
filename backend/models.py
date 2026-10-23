@@ -15,6 +15,22 @@ class DBUser(Base):
     # Stable Google identity; never trust a client-supplied email as proof of identity.
     google_subject = Column(String, nullable=True, unique=True, index=True)
 
+class DBCustomerAddress(Base):
+    """A customer's saved delivery address; each account can manage only its own rows."""
+    __tablename__ = "customer_addresses"
+
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, nullable=False, index=True)
+    label = Column(String, nullable=False, default="المنزل")
+    recipient_name = Column(String, nullable=False)
+    phone = Column(String, nullable=False)
+    address = Column(Text, nullable=False)
+    notes = Column(Text, nullable=False, default="")
+    is_default = Column(Boolean, nullable=False, default=False)
+    created_at = Column(String, nullable=False)
+    updated_at = Column(String, nullable=False)
+
+
 class DBVendorStore(Base):
     __tablename__ = "vendor_stores"
     __table_args__ = (UniqueConstraint("owner_user_id", name="uq_vendor_stores_owner_user_id"),)
@@ -57,6 +73,12 @@ class DBOrder(Base):
     address = Column(String, nullable=False)
     status = Column(String, default="بانتظار القبول")
     date = Column(String, nullable=False)
+    # Internal delivery assignment; populated only by an authenticated admin dispatch action.
+    delivery_agent_name = Column(String, nullable=True)
+    delivery_agent_phone = Column(String, nullable=True)
+    delivery_notes = Column(Text, nullable=True)
+    delivery_assigned_at = Column(String, nullable=True)
+    delivery_delivered_at = Column(String, nullable=True)
 
 class DBSupportTicket(Base):
     __tablename__ = "support_tickets"

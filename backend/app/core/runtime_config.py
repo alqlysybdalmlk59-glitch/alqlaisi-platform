@@ -53,9 +53,10 @@ def validate_production_configuration() -> None:
 def validate_production_database_schema(engine) -> None:
     required = {
         "users": {"id", "email", "role", "status", "store_id", "password_hash", "google_subject"},
+        "customer_addresses": {"id", "user_id", "label", "recipient_name", "phone", "address", "notes", "is_default", "created_at", "updated_at"},
         "vendor_stores": {"id", "status", "owner_user_id", "delivery_fee"},
         "products": {"id", "vendor_id", "price", "is_available", "review_status"},
-        "orders": {"id", "client_id", "vendor_id", "items_price", "delivery_fee", "total_price"},
+        "orders": {"id", "client_id", "vendor_id", "items_price", "delivery_fee", "total_price", "delivery_agent_name", "delivery_agent_phone", "delivery_notes", "delivery_assigned_at", "delivery_delivered_at"},
         "support_tickets": {"id", "user_id", "status"},
         "order_status_history": {"id", "order_id", "old_status", "new_status", "changed_by_user_id", "changed_by_role", "created_at"},
         "vendor_ownership_history": {"id", "store_id", "previous_owner_user_id", "new_owner_user_id", "actor_user_id", "action", "verification_note", "created_at"},
