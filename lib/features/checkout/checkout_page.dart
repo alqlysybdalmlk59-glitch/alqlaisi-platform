@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
+import '../../core/network/api_endpoints.dart';
 import '../../core/theme/app_theme.dart';
 import '../cart/services/cart_service.dart';
 import '../orders/services/order_service.dart';
@@ -25,12 +26,103 @@ class _CheckoutPageState extends State<CheckoutPage> {
   late final ApiClient _apiClient;
   late final OrderService _orderService;
   bool _submitting = false;
+  bool _loadingAddresses = true;
+  bool _saveAddress = false;
+  String _selectedAddressId = '';
+  String? _addressBookMessage;
+  List<Map<String, dynamic>> _savedAddresses = [];
 
   @override
   void initState() {
     super.initState();
     _apiClient = ApiClient();
     _orderService = OrderService(_apiClient);
+    _loadSavedAddresses();
+  }
+
+  Map<String, dynamic>? _addressById(String id) {
+    for (final address in _savedAddresses) {
+      if ((address['id'] ?? '').toString() == id) return address;
+    }
+    return null;
+  }
+
+  Future<void> _loadSavedAddresses() async {
+    try {
+      final result = await _apiClient.get(ApiEndpoints.customerAddresses, token: widget.token);
+      if (result is! List) throw const ApiException(message: 'قائمة العناوين المحفوظة غير صحيحة.');
+      final addresses = result.whereType<Map>().map((row) => Map<String, dynamic>.from(row)).toList();
+      if (!mounted) return;
+      setState(() {
+        _savedAddresses = addresses;
+        _loadingAddresses = false;
+        _addressBookMessage = null;
+        if (addresses.isNotEmpty) {
+          Map<String, dynamic>? preferred;
+          for (final address in addresses) {
+            if (address['is_default'] == true) { preferred = address; break; }
+          }
+          preferred ??= addresses.first;
+          _selectedAddressId = (preferred['id'] ?? '').toString();
+          _fillAddress(preferred);
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loadingAddresses = false;
+        _addressBookMessage = 'تعذر تحميل العناوين المحفوظة؛ يمكنك إدخال العنوان يدويًا.';
+      });
+    }
+  }
+
+  void _fillAddress(Map<String, dynamic> address) {
+    _recipientController.text = (address['recipient_name'] ?? '').toString();
+    _phoneController.text = (address['phone'] ?? '').toString();
+    _addressController.text = (address['address'] ?? '').toString();
+    _notesController.text = (address['notes'] ?? '').toString();
+  }
+
+  void _selectAddress(String? value) {
+    if (value == null) return;
+    setState(() {
+      _selectedAddressId = value;
+      if (value.isEmpty) {
+        _recipientController.clear();
+        _phoneController.clear();
+        _addressController.clear();
+        _notesController.clear();
+      } else {
+        final address = _addressById(value);
+        if (address != null) _fillAddress(address);
+      }
+    });
+  }
+
+  Future<void> _saveCurrentAddress() async {
+    final currentSaved = _addressById(_selectedAddressId);
+    final payload = <String, dynamic>{
+      'label': (currentSaved?['label'] ?? 'المنزل').toString(),
+      'recipient_name': _recipientController.text.trim(),
+      'phone': _phoneController.text.trim(),
+      'address': _addressController.text.trim(),
+      'notes': _notesController.text.trim(),
+      'is_default': _savedAddresses.isEmpty,
+    };
+    final saved = await _apiClient.post(
+      ApiEndpoints.customerAddresses,
+      body: payload,
+      token: widget.token,
+    );
+    if (saved is Map && saved['id'] != null && mounted) {
+      final row = Map<String, dynamic>.from(saved);
+      final rows = _savedAddresses.where((item) => item['id'].toString() != row['id'].toString()).toList()..add(row);
+      setState(() {
+        _savedAddresses = rows;
+        _selectedAddressId = row['id'].toString();
+        _addressBookMessage = null;
+      });
+    }
   }
 
   @override
@@ -69,6 +161,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
     setState(() => _submitting = true);
     try {
+      // Save first so an address-book failure cannot happen after order creation.
+      if (_saveAddress) await _saveCurrentAddress();
       final orders = await _orderService.checkout(
         cart: cart,
         token: widget.token,
@@ -156,6 +250,26 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 padding: const EdgeInsets.all(16),
                 children: [
                   Text('عنوان التوصيل', style: Theme.of(context).textTheme.titleLarge),
+                  if (_loadingAddresses)
+                    const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: LinearProgressIndicator())
+                  else if (_savedAddresses.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedAddressId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'استخدم عنوانًا محفوظًا', prefixIcon: Icon(Icons.bookmark_outline)),
+                      items: [
+                        const DropdownMenuItem<String>(value: '', child: Text('إدخال عنوان جديد')),
+                        ..._savedAddresses.map((address) => DropdownMenuItem<String>(
+                          value: (address['id'] ?? '').toString(),
+                          child: Text((address['label'] ?? 'عنوان').toString() + ' — ' + (address['address'] ?? '').toString(), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        )),
+                      ],
+                      onChanged: _submitting ? null : _selectAddress,
+                    ),
+                  ],
+                  if (_addressBookMessage != null)
+                    Padding(padding: const EdgeInsets.only(top: 8), child: Text(_addressBookMessage!, style: const TextStyle(color: AppTheme.muted, fontSize: 12))),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _recipientController,
@@ -181,6 +295,14 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     controller: _notesController,
                     maxLines: 2,
                     decoration: const InputDecoration(labelText: 'ملاحظات التوصيل (اختياري)', prefixIcon: Icon(Icons.notes_outlined)),
+                  ),
+                  CheckboxListTile(
+                    value: _saveAddress,
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: const Text('حفظ هذا العنوان في دفتر العناوين'),
+                    subtitle: const Text('ستتمكن من اختياره في طلباتك القادمة.'),
+                    onChanged: _submitting ? null : (value) => setState(() => _saveAddress = value ?? false),
                   ),
                   const SizedBox(height: 24),
                   Text('المنتجات حسب المتجر', style: Theme.of(context).textTheme.titleLarge),
