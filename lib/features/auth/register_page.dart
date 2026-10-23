@@ -100,6 +100,10 @@ class _RegisterPageState extends State<RegisterPage> {
 
   Future<void> _registerWithGoogle() async {
     if (_loading) return;
+    if (!_acceptedTerms) {
+      setState(() => _error = 'يجب الموافقة على الشروط وسياسة الخصوصية قبل إنشاء الحساب.');
+      return;
+    }
     setState(() {
       _loading = true;
       _error = null;
