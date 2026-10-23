@@ -508,6 +508,75 @@ class TestAuthAPI(unittest.TestCase):
             self.assertEqual(saved.owner_user_id, user_id)
             self.assertEqual(saved.store_name, "متجر بعد التعديل")
 
+    def test_admin_dispatch_assigns_internal_courier_and_audits_lifecycle(self):
+        seller_token, admin_token, store, product_id = self._approved_store_and_product("777123494")
+        buyer_token, _buyer_id = self._register("777123495")
+        checkout = self.client.post("/api/checkout",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+            json={"recipient_name": "عميل التوصيل", "phone": "777999495",
+                "delivery_address": "صنعاء، حي الاختبار، شارع الاختبار",
+                "items": [{"product_id": product_id, "quantity": 1}]})
+        self.assertEqual(checkout.status_code, 201, checkout.text)
+        order = checkout.json()[0]
+        order_id = order["id"]
+
+        for next_status in ("قيد التجهيز", "جاهز للتوصيل"):
+            changed = self.client.put(
+                f"/api/orders/{order_id}/status?status={next_status}",
+                headers={"Authorization": f"Bearer {seller_token}"})
+            self.assertEqual(changed.status_code, 200, changed.text)
+
+        direct_transit = self.client.put(
+            f"/api/orders/{order_id}/status?status=قيد التوصيل",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(direct_transit.status_code, 409, direct_transit.text)
+        premature_delivery = self.client.put(
+            f"/api/orders/{order_id}/status?status=تم التسليم",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(premature_delivery.status_code, 409, premature_delivery.text)
+
+        payload = {"delivery_agent_name": "موظف التوصيل الأول",
+            "delivery_agent_phone": "777123494", "delivery_notes": "اتصل عند الوصول"}
+        forbidden = self.client.put(f"/api/orders/{order_id}/dispatch",
+            headers={"Authorization": f"Bearer {buyer_token}"}, json=payload)
+        self.assertEqual(forbidden.status_code, 403, forbidden.text)
+
+        dispatched = self.client.put(f"/api/orders/{order_id}/dispatch",
+            headers={"Authorization": f"Bearer {admin_token}"}, json=payload)
+        self.assertEqual(dispatched.status_code, 200, dispatched.text)
+        assigned_order = dispatched.json()["order"]
+        self.assertEqual(assigned_order["status"], "قيد التوصيل")
+        self.assertEqual(assigned_order["delivery_agent_name"], "موظف التوصيل الأول")
+        self.assertEqual(assigned_order["delivery_agent_phone"], "777123494")
+        self.assertIsNotNone(assigned_order["delivery_assigned_at"])
+
+        reassigned = self.client.put(f"/api/orders/{order_id}/dispatch",
+            headers={"Authorization": f"Bearer {admin_token}"}, json={
+                "delivery_agent_name": "موظف التوصيل البديل",
+                "delivery_agent_phone": "777123496", "delivery_notes": "إعادة إسناد بسبب تغيير المناوبة"})
+        self.assertEqual(reassigned.status_code, 200, reassigned.text)
+        self.assertEqual(reassigned.json()["order"]["delivery_agent_name"], "موظف التوصيل البديل")
+
+        delivered = self.client.put(
+            f"/api/orders/{order_id}/status?status=تم التسليم",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(delivered.status_code, 200, delivered.text)
+        history = self.client.get(f"/api/orders/{order_id}/history",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(history.status_code, 200, history.text)
+        events = history.json()
+        self.assertEqual(events[-3]["old_status"], "جاهز للتوصيل")
+        self.assertEqual(events[-3]["new_status"], "قيد التوصيل")
+        self.assertIn("موظف التوصيل الأول", events[-3]["note"])
+        self.assertEqual(events[-2]["old_status"], "قيد التوصيل")
+        self.assertEqual(events[-2]["new_status"], "قيد التوصيل")
+        self.assertIn("موظف التوصيل البديل", events[-2]["note"])
+        self.assertEqual(events[-1]["new_status"], "تم التسليم")
+        with self.TestSession() as db:
+            saved = db.query(models.DBOrder).filter_by(id=order_id).first()
+            self.assertEqual(saved.delivery_agent_name, "موظف التوصيل البديل")
+            self.assertIsNotNone(saved.delivery_delivered_at)
+
     def test_google_login_uses_configured_web_client_id_as_token_audience(self):
         claims = {
             "sub": "google-audience-test-001",

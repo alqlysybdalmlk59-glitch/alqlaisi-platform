@@ -233,18 +233,44 @@
   }
   function renderOrders() {
     const wrap = element("div");
-    wrap.append(element("p", "muted", "الطلب من عدة متاجر يُحفظ كطلبات منفصلة. تتولى المنصة متابعة التوصيل الداخلي؛ الدفع الحالي عند الاستلام."));
-    const statuses = ["بانتظار القبول","قيد التجهيز","جاهز للتوصيل","قيد التوصيل","تم التسليم","ملغي"];
+    wrap.append(element("p", "muted", "الطلب من عدة متاجر يُحفظ كطلبات منفصلة. بعد تجهيز الطلب، تُسند الإدارة موظف التوصيل الداخلي قبل تحويله إلى قيد التوصيل؛ الدفع عند الاستلام."));
+    const allowedStatusOptions = {
+      "بانتظار القبول": ["بانتظار القبول", "قيد التجهيز", "ملغي"],
+      "قيد التجهيز": ["قيد التجهيز", "جاهز للتوصيل", "ملغي"],
+      "جاهز للتوصيل": ["جاهز للتوصيل", "ملغي"],
+      "قيد التوصيل": ["قيد التوصيل", "تم التسليم"],
+      "تم التسليم": ["تم التسليم"],
+      "ملغي": ["ملغي"]
+    };
     const list = [];
     state.orders.forEach(order => {
+      const statuses = allowedStatusOptions[order.status] || [order.status];
       const select = element("select");
       statuses.forEach(s => { const o=element("option","",s); o.value=s; select.append(o); });
-      select.value = statuses.includes(order.status) ? order.status : statuses[0];
+      select.value = order.status;
       const save = action("حفظ الحالة", "secondary", async () => {
         await api("/orders/" + encodeURIComponent(order.id) + "/status?status=" + encodeURIComponent(select.value), {method:"PUT"});
         notify("تم تحديث حالة الطلب.");
         await refreshData();
       });
+      const actions = [select, save];
+      if (order.status === "جاهز للتوصيل" || order.status === "قيد التوصيل") {
+        actions.push(action(order.status === "قيد التوصيل" ? "إعادة إسناد موظف التوصيل" : "إسناد موظف التوصيل", "primary", async () => {
+          const name = prompt("اسم موظف التوصيل الداخلي:", order.delivery_agent_name || "");
+          if (name === null) return;
+          if (name.trim().length < 2) throw new Error("اكتب اسم موظف التوصيل.");
+          const phone = prompt("رقم هاتف موظف التوصيل:", order.delivery_agent_phone || "");
+          if (phone === null) return;
+          if (!/^[+0-9][0-9 ()-]{5,18}[0-9]$/.test(phone.trim())) throw new Error("رقم الهاتف غير صالح؛ استخدم 7 إلى 20 محرفاً من الأرقام وعلامات الهاتف.");
+          const notes = prompt("ملاحظات التوصيل (اختياري):", order.delivery_notes || "");
+          if (notes === null) return;
+          await api("/orders/" + encodeURIComponent(order.id) + "/dispatch", {method:"PUT", body:{
+            delivery_agent_name: name.trim(), delivery_agent_phone: phone.trim(), delivery_notes: notes.trim()
+          }});
+          notify("تم تسجيل موظف التوصيل وحفظ الإسناد في سجل الطلب.");
+          await refreshData();
+        }));
+      }
       const history = action("سجل تغييرات الحالة", "secondary", async () => {
         const entries = await api("/orders/" + encodeURIComponent(order.id) + "/history");
         if (!Array.isArray(entries) || entries.length === 0) {
@@ -257,9 +283,14 @@
           (entry.note ? " · " + entry.note : "")
         ).join("\\n\\n"));
       });
+      actions.push(history);
       list.push(record("طلب " + order.id, ["العميل: " + order.client_name + " · المتجر: " + order.vendor_name,
         "قيمة المنتجات: " + order.items_price + " · التوصيل: " + order.delivery_fee + " · الإجمالي: " + order.total_price + " ريال",
-        "طريقة الدفع: " + order.payment_method, "تاريخ الإنشاء: " + order.date], order.status, [select,save,history]));
+        "طريقة الدفع: " + order.payment_method,
+        "موظف التوصيل: " + (order.delivery_agent_name || "لم يتم التعيين") + " · الهاتف: " + (order.delivery_agent_phone || "—"),
+        "ملاحظات التوصيل: " + (order.delivery_notes || "—"),
+        "تاريخ الإسناد: " + (order.delivery_assigned_at || "—") + " · تاريخ التسليم: " + (order.delivery_delivered_at || "—"),
+        "تاريخ الإنشاء: " + order.date], order.status, actions));
     });
     wrap.append(listOrEmpty(list, "لا توجد طلبات بعد."));
     setContent(wrap);

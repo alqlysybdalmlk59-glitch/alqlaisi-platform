@@ -53,7 +53,7 @@ The root and seller Android projects now include Gradle wrapper launchers and CI
 
 - Configure and test edge rate limits for `/auth/login`, `/auth/register`, `/auth/google`, `/checkout` and `/orders/checkout`; the included Nginx template provides a starting configuration. Configure monitoring/alerting and adapt limits to production traffic. Do not rely on in-process memory throttling for a multi-worker service.
 - Store logs without passwords, Google ID tokens, bearer tokens, or full payment/delivery details. Restrict log access.
-- Confirm the seller suspension workflow, order cancellation policy, internal delivery assignment, and retention policy before launch.
+- Confirm the seller suspension workflow, order cancellation policy, internal delivery employee roster/verification, delivery assignment and completion procedures, proof-of-delivery policy, and retention policy before launch. The current internal dispatch workflow stores a staff name and phone entered by an admin; it does not yet provide a dedicated courier login, GPS tracking, or proof-of-delivery capture.
 - The AI insights route intentionally returns 501 until connected to real sales data. Forgot-password likewise remains disabled until a verified recovery channel is implemented.
 - Current checkout is cash on delivery; there are no online card charges or actual money transfers. Commission percentage remains a business decision, not a hardcoded value.
 - Favourites are currently stored securely on the user's device, not synchronised to their account across devices. The order-status screen polls/refreshes the API; push notifications are not wired.
