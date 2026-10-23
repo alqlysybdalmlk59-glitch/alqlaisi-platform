@@ -73,7 +73,9 @@ fun AdminPortalScreen(onLogout: () -> Unit) {
                     vendors = vendors,
                     products = products,
                     onApproveVendor = { EcommerceRepository.approveVendor(it) },
-                    onApproveProduct = { EcommerceRepository.approveProduct(it) }
+                    onRejectVendor = { id, notes -> EcommerceRepository.rejectVendor(id, notes) },
+                    onApproveProduct = { id, price -> EcommerceRepository.approveProduct(id, price) },
+                    onRejectProduct = { id, notes -> EcommerceRepository.rejectProduct(id, notes) }
                 )
                 1 -> AdminDeliveryOrdersView(
                     orders = orders,
@@ -88,7 +90,14 @@ fun AdminPortalScreen(onLogout: () -> Unit) {
                     response = aiResponse,
                     onQueryChange = { aiQuery = it },
                     onAsk = {
-                        aiResponse = "تحليل الذكاء الاصطناعي (Gemini AI): أداء المبيعات ممتاز هذا الأسبوع مع نمو بنسبة 22% في قطاع الإلكترونيات والأزياء. يُنصح بتقديم عروض ترويجية للبائعين الجدد."
+                        val completedOrders = orders.filter { it.status == OrderStatus.COMPLETED }
+                        val completedValue = completedOrders.sumOf { it.totalPrice }
+                        val pendingProducts = products.count { it.reviewStatus == ProductReviewStatus.PENDING_REVIEW }
+                        val pendingStores = vendors.count { it.status == "قيد المراجعة" }
+                        aiResponse = "ملخص محلي للبيانات التجريبية، وليس استجابة من Gemini: " +
+                            "عدد الطلبات المكتملة ${completedOrders.size}، وقيمة الطلبات المكتملة ${completedValue} ر.ي، " +
+                            "والمنتجات المعلقة ${pendingProducts}، وطلبات المتاجر المعلقة ${pendingStores}. " +
+                            "لن تُعرض توقعات أو نسب نمو قبل ربط خدمة التحليلات ببيانات فعلية."
                     }
                 )
             }
@@ -101,25 +110,51 @@ fun AdminModerationView(
     vendors: List<VendorStore>,
     products: List<Product>,
     onApproveVendor: (String) -> Unit,
-    onApproveProduct: (String) -> Unit
+    onRejectVendor: (String, String) -> Unit,
+    onApproveProduct: (String, Double) -> Unit,
+    onRejectProduct: (String, String) -> Unit
 ) {
     val pendingProducts = products.filter { it.reviewStatus == ProductReviewStatus.PENDING_REVIEW }
+    val pendingVendors = vendors.filter { it.status == "قيد المراجعة" }
+
+    var selectedProductForApproval by remember { mutableStateOf<Product?>(null) }
+    var salePriceText by remember { mutableStateOf("") }
+    var selectedProductForRejection by remember { mutableStateOf<Product?>(null) }
+    var productRejectNote by remember { mutableStateOf("") }
+    var selectedVendorForRejection by remember { mutableStateOf<VendorStore?>(null) }
+    var vendorRejectNote by remember { mutableStateOf("") }
 
     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Text("طلبات فتح المتاجر الجديدة", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            if (pendingVendors.isEmpty()) {
+                Text("لا توجد طلبات متاجر معلقة.", color = MaterialTheme.colorScheme.secondary)
+            }
         }
         items(vendors) { vendor ->
             Card(modifier = Modifier.fillMaxWidth()) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(vendor.storeName, fontWeight = FontWeight.Bold)
-                        Text("المالك: ${vendor.ownerName} | ${vendor.phone}")
-                        Text("الحالة: ${vendor.status}", color = if (vendor.status == "مفعل") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(vendor.storeName, fontWeight = FontWeight.Bold)
+                    Text("المالك: ${vendor.ownerName} | ${vendor.phone}")
+                    Text(
+                        "الحالة: ${vendor.status}",
+                        color = if (vendor.status == "مفعل") MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.error
+                    )
+                    if (vendor.adminNotes.isNotBlank()) {
+                        Text("ملاحظة الإدارة: ${vendor.adminNotes}", color = MaterialTheme.colorScheme.error)
                     }
-                    if (vendor.status != "مفعل") {
-                        Button(onClick = { onApproveVendor(vendor.id) }) {
-                            Text("تفعيل المتجر")
+                    if (vendor.status == "قيد المراجعة") {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { onApproveVendor(vendor.id) }) {
+                                Text("اعتماد المتجر")
+                            }
+                            OutlinedButton(onClick = {
+                                selectedVendorForRejection = vendor
+                                vendorRejectNote = ""
+                            }) {
+                                Text("رفض الطلب")
+                            }
                         }
                     }
                 }
@@ -128,7 +163,7 @@ fun AdminModerationView(
 
         item {
             Spacer(modifier = Modifier.height(8.dp))
-            Text("المنتجات المعلقة والمعروضة للمراجعة", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("المنتجات التي تنتظر المراجعة والتسعير", fontWeight = FontWeight.Bold, fontSize = 18.sp)
         }
         if (pendingProducts.isEmpty()) {
             item {
@@ -137,23 +172,138 @@ fun AdminModerationView(
         } else {
             items(pendingProducts) { product ->
                 Card(modifier = Modifier.fillMaxWidth()) {
-                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(product.title, fontWeight = FontWeight.Bold)
-                            Text("المتجر: ${product.vendorName} | السعر: ${product.price} ر.ي")
-                        }
-                        Button(onClick = { onApproveProduct(product.id) }) {
-                            Text("اعتماد ونشر")
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(product.title, fontWeight = FontWeight.Bold)
+                        Text("المتجر: ${product.vendorName}")
+                        Text("التصنيف: ${product.category}")
+                        Text("سعر الشراء المتفق عليه: ${product.purchasePrice ?: "غير محدد"} ر.ي")
+                        Text("سعر البيع النهائي: لم يُحدد بعد", color = MaterialTheme.colorScheme.secondary)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = {
+                                selectedProductForApproval = product
+                                salePriceText = ""
+                            }) {
+                                Text("تحديد السعر واعتماد")
+                            }
+                            OutlinedButton(onClick = {
+                                selectedProductForRejection = product
+                                productRejectNote = ""
+                            }) {
+                                Text("رفض المنتج")
+                            }
                         }
                     }
                 }
             }
         }
     }
+
+    selectedProductForApproval?.let { product ->
+        AlertDialog(
+            onDismissRequest = { selectedProductForApproval = null },
+            title = { Text("تحديد سعر البيع واعتماد المنتج") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(product.title, fontWeight = FontWeight.Bold)
+                    Text("سعر الشراء المتفق عليه: ${product.purchasePrice ?: "غير محدد"} ر.ي")
+                    OutlinedTextField(
+                        value = salePriceText,
+                        onValueChange = { value ->
+                            if (value.isEmpty() || value.matches(Regex("^\\d{0,9}(\\.\\d{0,2})?$"))) {
+                                salePriceText = value
+                            }
+                        },
+                        label = { Text("سعر البيع للعميل (ريال يمني)") },
+                        singleLine = true,
+                        isError = salePriceText.isNotBlank() && (salePriceText.toDoubleOrNull() ?: 0.0) <= 0.0
+                    )
+                    Text("بعد الاعتماد سيبقى المنتج غير متاح حتى يفعّل البائع التوفر يدوياً.", color = MaterialTheme.colorScheme.secondary, fontSize = 12.sp)
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = (salePriceText.toDoubleOrNull() ?: 0.0) > 0.0,
+                    onClick = {
+                        val price = salePriceText.toDoubleOrNull()
+                        if (price != null && price > 0.0) {
+                            onApproveProduct(product.id, price)
+                            selectedProductForApproval = null
+                            salePriceText = ""
+                        }
+                    }
+                ) { Text("اعتماد ونشر") }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedProductForApproval = null }) { Text("إلغاء") }
+            }
+        )
+    }
+
+    selectedProductForRejection?.let { product ->
+        AlertDialog(
+            onDismissRequest = { selectedProductForRejection = null },
+            title = { Text("رفض المنتج") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(product.title)
+                    OutlinedTextField(
+                        value = productRejectNote,
+                        onValueChange = { productRejectNote = it },
+                        label = { Text("سبب الرفض والملاحظات") },
+                        minLines = 2
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = productRejectNote.isNotBlank(),
+                    onClick = {
+                        onRejectProduct(product.id, productRejectNote.trim())
+                        selectedProductForRejection = null
+                        productRejectNote = ""
+                    }
+                ) { Text("تأكيد الرفض") }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedProductForRejection = null }) { Text("إلغاء") }
+            }
+        )
+    }
+
+    selectedVendorForRejection?.let { vendor ->
+        AlertDialog(
+            onDismissRequest = { selectedVendorForRejection = null },
+            title = { Text("رفض طلب المتجر") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(vendor.storeName, fontWeight = FontWeight.Bold)
+                    OutlinedTextField(
+                        value = vendorRejectNote,
+                        onValueChange = { vendorRejectNote = it },
+                        label = { Text("سبب الرفض والملاحظات") },
+                        minLines = 2
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = vendorRejectNote.isNotBlank(),
+                    onClick = {
+                        onRejectVendor(vendor.id, vendorRejectNote.trim())
+                        selectedVendorForRejection = null
+                        vendorRejectNote = ""
+                    }
+                ) { Text("تأكيد الرفض") }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedVendorForRejection = null }) { Text("إلغاء") }
+            }
+        )
+    }
 }
 
 @Composable
-fun AdminDeliveryOrdersView(orders: List<Order>, onUpdateStatus: (String, String) -> Unit) {
+fun AdminDeliveryOrdersView(orders: List<Order>, onUpdateStatus: (String, OrderStatus) -> Unit) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         items(orders) { order ->
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -161,11 +311,11 @@ fun AdminDeliveryOrdersView(orders: List<Order>, onUpdateStatus: (String, String
                     Text("طلب #: ${order.id}", fontWeight = FontWeight.Bold)
                     Text("العميل: ${order.clientName} | العنوان: ${order.address}")
                     Text("المتجر: ${order.vendorName}")
-                    Text("الحالة: ${order.status}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    Text("الحالة: ${order.status.label}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    if (order.status == "للتوصيل") {
-                        Button(onClick = { onUpdateStatus(order.id, "تم الاستلام") }) {
+                    if (order.status == OrderStatus.DELIVERING) {
+                        Button(onClick = { onUpdateStatus(order.id, OrderStatus.COMPLETED) }) {
                             Text("تأكيد التسليم للعميل وتلقي المبلغ")
                         }
                     }
