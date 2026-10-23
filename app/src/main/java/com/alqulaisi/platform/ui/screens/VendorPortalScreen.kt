@@ -27,9 +27,12 @@ fun VendorPortalScreen(onLogout: () -> Unit) {
     val vendors by EcommerceRepository.vendors.collectAsState()
     val currentUser by EcommerceRepository.currentUser.collectAsState()
 
-    val myVendorStore = vendors.find { it.id == "v1" }
-    val myProducts = products.filter { it.vendorId == "v1" }
-    val myOrders = orders.filter { it.vendorId == "v1" }
+    val myVendorStore = vendors.find { store ->
+        store.ownerId == currentUser?.id || (store.ownerId.isBlank() && store.id == currentUser?.id)
+    }
+    val currentStoreId = myVendorStore?.id
+    val myProducts = products.filter { it.vendorId == currentStoreId }
+    val myOrders = orders.filter { it.vendorId == currentStoreId }
 
     var showAddProductDialog by remember { mutableStateOf(false) }
 
@@ -81,15 +84,38 @@ fun VendorPortalScreen(onLogout: () -> Unit) {
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
-            if (myVendorStore?.status != "مفعل") {
+            if (myVendorStore == null) {
+                VendorStoreRequestView(
+                    ownerName = currentUser?.name.orEmpty(),
+                    onSubmit = { storeName, phone, description ->
+                        EcommerceRepository.registerVendorStore(
+                            storeName = storeName,
+                            ownerName = currentUser?.name.orEmpty(),
+                            phone = phone,
+                            desc = description
+                        )
+                    }
+                )
+            } else if (myVendorStore.status != "مفعل") {
                 Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(Icons.Default.HourglassTop, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text("حالة المتجر: ${myVendorStore?.status ?: "قيد المراجعة"}", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                            Text("حالة المتجر: ${myVendorStore.status}", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text("طلب فتح المتجر قيد المراجعة من قبل إدارة منصة القليسي. ستتمكن من إدارة المنتجات والمبيعات فور اعتماد المتجر.", fontSize = 14.sp)
+                            Text(
+                                if (myVendorStore.status == "مرفوض") {
+                                    "تم رفض طلب المتجر. راجع ملاحظة الإدارة قبل تقديم طلب جديد."
+                                } else {
+                                    "طلب فتح المتجر قيد المراجعة. ستتمكن من إدارة المنتجات والطلبات بعد اعتماد الإدارة."
+                                },
+                                fontSize = 14.sp
+                            )
+                            if (myVendorStore.adminNotes.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("ملاحظة الإدارة: ${myVendorStore.adminNotes}", color = MaterialTheme.colorScheme.error)
+                            }
                         }
                     }
                 }
@@ -110,20 +136,23 @@ fun VendorPortalScreen(onLogout: () -> Unit) {
 
             if (showAddProductDialog) {
                 AddProductDialog(onDismiss = { showAddProductDialog = false }) { title, price, desc, category ->
+                    val store = myVendorStore ?: return@AddProductDialog
                     val newProduct = Product(
                         id = "p-${System.currentTimeMillis()}",
                         title = title,
                         description = desc,
-                        price = price.toDoubleOrNull() ?: 50.0,
-                        imageUrl = "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500",
-                        vendorId = "v1",
-                        vendorName = myVendorStore?.storeName ?: "متجر البائع",
+                        price = 0.0,
+                        imageUrl = "https://images.unsplash.com/photo-1531346878377-a5be20888e57?w=500",
+                        vendorId = store.id,
+                        vendorName = store.storeName,
                         category = category,
-                        isAvailable = true,
-                        reviewStatus = ProductReviewStatus.PENDING_REVIEW
+                        isAvailable = false,
+                        reviewStatus = ProductReviewStatus.PENDING_REVIEW,
+                        purchasePrice = price.toDoubleOrNull()
                     )
-                    EcommerceRepository.addProduct(newProduct)
-                    showAddProductDialog = false
+                    if (EcommerceRepository.addProduct(newProduct)) {
+                        showAddProductDialog = false
+                    }
                 }
             }
         }
@@ -132,7 +161,7 @@ fun VendorPortalScreen(onLogout: () -> Unit) {
 
 @Composable
 fun VendorDashboardOverview(orders: List<Order>, products: List<Product>) {
-    val totalRevenue = orders.sumOf { it.totalPrice }
+    val totalRevenue = orders.filter { it.status == OrderStatus.COMPLETED }.sumOf { it.totalPrice }
     val totalOrders = orders.size
     val publishedCount = products.count { it.reviewStatus == ProductReviewStatus.PUBLISHED }
     val pendingCount = products.count { it.reviewStatus == ProductReviewStatus.PENDING_REVIEW }
@@ -181,7 +210,7 @@ fun VendorDashboardOverview(orders: List<Order>, products: List<Product>) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("طلب رقم: ${order.id}", fontWeight = FontWeight.Bold)
-                        Text(order.status, color = MaterialTheme.colorScheme.primary)
+                        Text(order.status.label, color = MaterialTheme.colorScheme.primary)
                     }
                     Text("العميل: ${order.clientName} | المبلغ: ${order.totalPrice} ر.ي", fontSize = 13.sp)
                 }
@@ -208,8 +237,16 @@ fun VendorProductsView(products: List<Product>, onToggleAvailability: (String) -
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(product.title, fontWeight = FontWeight.Bold)
-                        Text("السعر: ${product.price} ر.ي", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                        if (product.reviewStatus == ProductReviewStatus.PENDING_REVIEW) {
+                            Text("سعر الشراء للمراجعة: ${product.purchasePrice ?: "غير محدد"} ر.ي", fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary)
+                            Text("السعر النهائي تحدده الإدارة بعد المراجعة", fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
+                        } else {
+                            Text("سعر البيع المعتمد: ${product.price} ر.ي", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                        }
                         Text("حالة المراجعة: ${product.reviewStatus.name}", fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
+                        if (product.adminNotes.isNotBlank()) {
+                            Text("ملاحظة الإدارة: ${product.adminNotes}", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                        }
                         Text(
                             text = if (product.isAvailable) "الحالة: متاح" else "الحالة: غير متاح مؤقتاً",
                             fontSize = 12.sp,
@@ -218,7 +255,8 @@ fun VendorProductsView(products: List<Product>, onToggleAvailability: (String) -
                     }
                     Switch(
                         checked = product.isAvailable,
-                        onCheckedChange = { onToggleAvailability(product.id) }
+                        onCheckedChange = { onToggleAvailability(product.id) },
+                        enabled = product.reviewStatus == ProductReviewStatus.PUBLISHED
                     )
                 }
             }
@@ -227,7 +265,7 @@ fun VendorProductsView(products: List<Product>, onToggleAvailability: (String) -
 }
 
 @Composable
-fun VendorOrdersView(orders: List<Order>, onUpdateStatus: (String, String) -> Unit) {
+fun VendorOrdersView(orders: List<Order>, onUpdateStatus: (String, OrderStatus) -> Unit) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Text("طلبات المتجر الواردة", fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -237,20 +275,23 @@ fun VendorOrdersView(orders: List<Order>, onUpdateStatus: (String, String) -> Un
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("رقم الطلب: ${order.id}", fontWeight = FontWeight.Bold)
-                        Text(order.status, color = MaterialTheme.colorScheme.primary)
+                        Text(order.status.label, color = MaterialTheme.colorScheme.primary)
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("العميل: ${order.clientName}")
                     Text("العنوان: ${order.address}")
                     Text("الإجمالي: ${order.totalPrice} ر.ي")
                     Spacer(modifier = Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { onUpdateStatus(order.id, "مبتقولة وقيد التجهيز") }) {
-                            Text("قبول وتجهيز")
+                    when (order.status) {
+                        OrderStatus.PENDING -> Button(onClick = { onUpdateStatus(order.id, OrderStatus.ACCEPTED) }) {
+                            Text("قبول الطلب وبدء التجهيز")
                         }
-                        OutlinedButton(onClick = { onUpdateStatus(order.id, "للتوصيل") }) {
+                        OrderStatus.ACCEPTED -> Button(onClick = { onUpdateStatus(order.id, OrderStatus.DELIVERING) }) {
                             Text("جاهز للتوصيل الداخلي")
                         }
+                        OrderStatus.DELIVERING -> Text("الطلب لدى موظف التوصيل الداخلي")
+                        OrderStatus.COMPLETED -> Text("تم استلام الطلب")
+                        OrderStatus.CANCELLED -> Text("تم إلغاء الطلب", color = MaterialTheme.colorScheme.error)
                     }
                 }
             }
@@ -260,19 +301,24 @@ fun VendorOrdersView(orders: List<Order>, onUpdateStatus: (String, String) -> Un
 
 @Composable
 fun VendorSalesReportView(orders: List<Order>) {
-    val totalSales = orders.sumOf { it.totalPrice }
-    val completedCount = orders.count { it.status == "تم الاستلام" }
+    val completedOrders = orders.filter { it.status == OrderStatus.COMPLETED }
+    val totalSales = completedOrders.sumOf { it.totalPrice }
+    val completedCount = completedOrders.size
+    val inProgressCount = orders.count {
+        it.status == OrderStatus.PENDING || it.status == OrderStatus.ACCEPTED || it.status == OrderStatus.DELIVERING
+    }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("تقارير المبيعات والأرباح", fontWeight = FontWeight.Bold, fontSize = 18.sp)
         Spacer(modifier = Modifier.height(16.dp))
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(20.dp)) {
-                Text("إجمالي المبيعات المحققة", color = MaterialTheme.colorScheme.secondary)
+                Text("قيمة الطلبات التي اكتمل تسليمها", color = MaterialTheme.colorScheme.secondary)
                 Text("$totalSales ر.ي", fontWeight = FontWeight.Bold, fontSize = 24.sp, color = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.height(12.dp))
                 Text("الطلبات المكتملة: $completedCount")
-                Text("العمولات: (حسب سياسة المنصة)")
+                Text("الطلبات قيد التنفيذ: $inProgressCount")
+                Text("العمولات غير محسوبة حتى تعتمد سياسة المنصة.")
             }
         }
     }
@@ -291,14 +337,14 @@ fun AddProductDialog(onDismiss: () -> Unit, onAdd: (String, String, String, Stri
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("اسم المنتج") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = price, onValueChange = { price = it }, label = { Text("السعر بالريال") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = price, onValueChange = { price = it }, label = { Text("سعر الشراء المتفق عليه (ر.ي) — ليس سعر البيع النهائي") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("وصف المنتج ومواصفاته") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = category, onValueChange = { category = it }, label = { Text("التصنيف") }, modifier = Modifier.fillMaxWidth())
             }
         },
         confirmButton = {
             Button(onClick = { if (title.isNotBlank() && price.isNotBlank()) onAdd(title, price, description, category) }) {
-                Text("إرسال للمراجعة والإضافة")
+                Text("إرسال المنتج للمراجعة")
             }
         },
         dismissButton = {
