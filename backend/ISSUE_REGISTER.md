@@ -34,7 +34,7 @@ A green CI run means the checks in that workflow passed; it is not proof that ev
 8. SQLite is the default DB. Setting `DATABASE_URL` to PostgreSQL does not migrate SQLite data. Back up and test a data migration, validate row counts and owner mappings before cutover.
 9. Before production, set a strong JWT secret, explicit CORS origins and allowed hosts, deploy behind HTTPS ingress/rate limiting (Nginx template added), keep port 8000 private, verify audit logs, and test backup/restore.
 10. Reconcile legacy store rows with null `owner_user_id` and resolve duplicated/inaccurate mappings through admin review; each manual link now requires a recorded verification note.
-11. `/api/ai/sales-insights` is still a placeholder and is not connected to actual analytics.
+11. `/api/ai/sales-insights` now calculates transparent, database-backed totals, delivered-order revenue, product rankings, store summaries, and rule-based operational notes. It returns `ai_model_connected=false` explicitly; a generative AI provider is not configured and is not claimed.
 12. Current CI compiles Python, runs auth/access-control/production-config tests, tests customer phone validation, analyzes and debug-builds the customer and seller Android apps, and syntax-checks the admin dashboard JavaScript. It does not replace real Google OAuth, release signing, device/browser end-to-end tests, or deployment verification.
 
 ## Acceptance gates

@@ -535,6 +535,45 @@ class TestAuthAPI(unittest.TestCase):
             self.assertEqual(saved.owner_user_id, user_id)
             self.assertEqual(saved.store_name, "متجر بعد التعديل")
 
+    def test_admin_sales_insights_are_database_backed_and_role_protected(self):
+        seller_token, admin_token, store, product_id = self._approved_store_and_product("777123501")
+        buyer_token, _buyer_id = self._register("777123502")
+        checkout = self.client.post("/api/checkout",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+            json={"recipient_name": "عميل التحليل", "phone": "777000501",
+                "delivery_address": "صنعاء، حي الاختبار، شارع الاختبار",
+                "items": [{"product_id": product_id, "quantity": 1}]})
+        self.assertEqual(checkout.status_code, 201, checkout.text)
+        order_id = checkout.json()[0]["id"]
+        for next_status in ("قيد التجهيز", "جاهز للتوصيل"):
+            changed = self.client.put(f"/api/orders/{order_id}/status?status={next_status}",
+                headers={"Authorization": f"Bearer {seller_token}"})
+            self.assertEqual(changed.status_code, 200, changed.text)
+        dispatched = self.client.put(f"/api/orders/{order_id}/dispatch",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"delivery_agent_name": "موظف تحليل", "delivery_agent_phone": "777123501", "delivery_notes": ""})
+        self.assertEqual(dispatched.status_code, 200, dispatched.text)
+        delivered = self.client.put(f"/api/orders/{order_id}/status?status=تم التسليم",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(delivered.status_code, 200, delivered.text)
+
+        report = self.client.post("/api/ai/sales-insights",
+            headers={"Authorization": f"Bearer {admin_token}"})
+        self.assertEqual(report.status_code, 200, report.text)
+        body = report.json()
+        self.assertEqual(body["source"], "database_rule_based")
+        self.assertFalse(body["ai_model_connected"])
+        self.assertEqual(body["summary"]["total_orders"], 1)
+        self.assertEqual(body["summary"]["delivered_orders"], 1)
+        self.assertEqual(body["summary"]["product_sales_total"], 175)
+        self.assertEqual(body["summary"]["delivery_fee_total"], 15)
+        self.assertEqual(body["summary"]["collected_total"], 190)
+        self.assertEqual(body["top_products"][0]["title"], "دفتر اختبار")
+        self.assertEqual(body["top_products"][0]["quantity_sold"], 1)
+        forbidden = self.client.post("/api/ai/sales-insights",
+            headers={"Authorization": f"Bearer {buyer_token}"})
+        self.assertEqual(forbidden.status_code, 403, forbidden.text)
+
     def test_admin_dispatch_assigns_internal_courier_and_audits_lifecycle(self):
         seller_token, admin_token, store, product_id = self._approved_store_and_product("777123494")
         buyer_token, _buyer_id = self._register("777123495")

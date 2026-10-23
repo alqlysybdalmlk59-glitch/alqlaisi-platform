@@ -1,6 +1,6 @@
 (() => {
   const $ = (selector) => document.querySelector(selector);
-  const state = { token: sessionStorage.getItem("alq_admin_token") || "", base: $("#apiBase")?.value || "http://localhost:8000/api", user: null, page: "overview", vendors: [], products: [], orders: [], users: [], tickets: [] };
+  const state = { token: sessionStorage.getItem("alq_admin_token") || "", base: $("#apiBase")?.value || "http://localhost:8000/api", user: null, page: "overview", vendors: [], products: [], orders: [], users: [], tickets: [], salesInsights: null };
   const pageTitles = {overview:"نظرة عامة",stores:"المتاجر والبائعون",products:"المنتجات والمراجعة",orders:"الطلبات والتوصيل",users:"المستخدمون",support:"الدعم والشكاوى",settings:"الإعدادات والاتصال"};
   const content = $("#pageContent");
 
@@ -104,6 +104,39 @@
     p.append(action("مراجعة المتاجر", "secondary", async () => showPage("stores")));
     p.append(action("مراجعة المنتجات", "secondary", async () => showPage("products")));
     wrap.append(p);
+
+    const analytics = panel("تحليل المبيعات من البيانات الفعلية", "تقرير بقواعد تحليلية واضحة من الطلبات المسلّمة؛ لا يتطلب مفتاح ذكاء اصطناعي ولا يدّعي الاتصال بنموذج خارجي.");
+    analytics.append(action("حساب / تحديث التحليل", "primary", async () => {
+      state.salesInsights = await api("/ai/sales-insights", {method:"POST"});
+      renderOverview();
+      notify("تم احتساب تحليل المبيعات من قاعدة البيانات.");
+    }));
+    if (state.salesInsights && state.salesInsights.summary) {
+      const summary = state.salesInsights.summary;
+      const metrics = element("div", "metric-grid");
+      [
+        ["إجمالي الطلبات", summary.total_orders],
+        ["الطلبات المسلّمة", summary.delivered_orders],
+        ["المبيعات", Number(summary.product_sales_total || 0).toLocaleString("en-US") + " ريال"],
+        ["المبلغ المحصل", Number(summary.collected_total || 0).toLocaleString("en-US") + " ريال"],
+        ["التوصيل", Number(summary.delivery_fee_total || 0).toLocaleString("en-US") + " ريال"],
+        ["قيد المتابعة", summary.pending_orders],
+      ].forEach(([label, value]) => {
+        const tile = element("article", "metric");
+        tile.append(element("p", "", label), element("strong", "", value ?? 0));
+        metrics.append(tile);
+      });
+      analytics.append(metrics);
+      analytics.append(element("p", "muted", state.salesInsights.notice || ""));
+      const productsPanel = panel("أكثر المنتجات مبيعاً", "اعتماداً على تفاصيل المنتجات داخل الطلبات المسلّمة.");
+      const products = (state.salesInsights.top_products || []).map(item => record(item.title, ["الكمية المباعة: " + item.quantity_sold, "مبيعات المنتج: " + Number(item.product_sales || 0).toLocaleString("en-US") + " ريال"], null));
+      productsPanel.append(listOrEmpty(products, "لا توجد مبيعات مسلّمة لتحليل المنتجات."));
+      analytics.append(productsPanel);
+      const insightList = element("ul", "");
+      (state.salesInsights.insights || []).forEach(item => insightList.append(element("li", "", item)));
+      analytics.append(insightList);
+    }
+    wrap.append(analytics);
     setContent(wrap);
   }
   function renderStores() {
