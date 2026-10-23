@@ -60,6 +60,7 @@ jobs:
           retention-days: 7
 
   seller-flutter:
+    if: ${{ hashFiles('seller_app/pubspec.yaml') != '' }}
     name: Seller Flutter Android build
     runs-on: ubuntu-latest
     defaults:
