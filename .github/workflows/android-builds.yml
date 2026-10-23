@@ -129,7 +129,7 @@ jobs:
         shell: bash
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
       - name: Build native Android app
-        run: gradle --no-daemon --stacktrace :app:assembleDebug
+        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest :app:assembleDebug
       - name: Upload native APK
         uses: actions/upload-artifact@v4
         with:
