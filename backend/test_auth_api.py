@@ -508,6 +508,28 @@ class TestAuthAPI(unittest.TestCase):
             self.assertEqual(saved.owner_user_id, user_id)
             self.assertEqual(saved.store_name, "متجر بعد التعديل")
 
+    def test_google_login_uses_configured_web_client_id_as_token_audience(self):
+        claims = {
+            "sub": "google-audience-test-001",
+            "email": "audience.customer@example.com",
+            "email_verified": True,
+            "name": "Audience Customer",
+        }
+        with patch.dict(os.environ, {"GOOGLE_CLIENT_ID": "expected-web-client.apps.googleusercontent.com"}), patch.object(
+            auth.google_id_token, "verify_oauth2_token", return_value=claims
+        ) as verify_token:
+            response = self.client.post(
+                "/auth/google",
+                json={"id_token": "mocked-google-id-token-audience"},
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        verify_token.assert_called_once()
+        self.assertEqual(
+            verify_token.call_args.kwargs.get("audience"),
+            "expected-web-client.apps.googleusercontent.com",
+        )
+
     def test_google_login_creates_and_reuses_verified_subject(self):
         claims = {
             "sub": "google-subject-test-001",
