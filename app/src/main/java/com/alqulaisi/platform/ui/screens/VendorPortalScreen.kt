@@ -329,7 +329,7 @@ fun AddProductDialog(onDismiss: () -> Unit, onAdd: (String, String, String, Stri
     var title by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf("إلكترونيات") }
+    var category by remember { mutableStateOf("دفاتر وكراسات") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -351,4 +351,84 @@ fun AddProductDialog(onDismiss: () -> Unit, onAdd: (String, String, String, Stri
             TextButton(onClick = onDismiss) { Text("إلغاء") }
         }
     )
+}
+
+
+@Composable
+fun VendorStoreRequestView(
+    ownerName: String,
+    onSubmit: (String, String, String) -> Boolean
+) {
+    var storeName by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            Icons.Default.Storefront,
+            contentDescription = null,
+            modifier = Modifier.size(48.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Text("طلب فتح متجر في منصة القليسي", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+        Text(
+            "أدخل بيانات متجرك. لن يظهر المتجر للعملاء ولن تتمكن من نشر المنتجات إلا بعد موافقة الإدارة.",
+            color = MaterialTheme.colorScheme.secondary
+        )
+        OutlinedTextField(
+            value = storeName,
+            onValueChange = { storeName = it },
+            label = { Text("اسم المتجر") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            value = ownerName,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("اسم مالك الحساب") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            value = phone,
+            onValueChange = { phone = it },
+            label = { Text("رقم التواصل") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            value = description,
+            onValueChange = { description = it },
+            label = { Text("وصف المتجر والمنتجات التي يقدمها") },
+            minLines = 3,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Button(
+            enabled = storeName.isNotBlank() && phone.isNotBlank() && description.isNotBlank(),
+            onClick = {
+                val accepted = onSubmit(storeName.trim(), phone.trim(), description.trim())
+                message = if (accepted) {
+                    "تم إرسال طلب المتجر إلى الإدارة."
+                } else {
+                    "تعذر إرسال الطلب. تحقق من البيانات وحالة الحساب."
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("إرسال طلب المراجعة")
+        }
+        if (message.isNotBlank()) {
+            Text(
+                message,
+                color = if (message.startsWith("تم")) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.error
+            )
+        }
+    }
 }
