@@ -105,10 +105,22 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: gradle
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-      - name: Install Android 34 SDK packages
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools" -type f -name sdkmanager 2>/dev/null | head -n 1)"
+          fi
+          test -n "$SDKMANAGER"
+          test -x "$SDKMANAGER"
+          set +e
+          yes | "$SDKMANAGER" --licenses
+          LICENSE_STATUS=${PIPESTATUS[1]}
+          set -e
+          test "$LICENSE_STATUS" -eq 0
+          "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0"
       - name: Build native Android app
         run: ./gradlew --no-daemon --stacktrace :app:assembleDebug
       - name: Upload native APK
