@@ -3,13 +3,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.devtools.ksp)
     alias(libs.plugins.secrets)
-    // Firebase configuration is intentionally local. Apply Google Services only
-    // when a real google-services.json is supplied for this app.
-    alias(libs.plugins.google.services) apply false
-}
-
-if (file("google-services.json").exists()) {
-    apply(plugin = "com.google.gms.google-services")
+    // Do not apply the Google Services plugin in the demo Compose app.
+    // A real Firebase app configuration must be supplied before enabling it.
 }
 
 android {
